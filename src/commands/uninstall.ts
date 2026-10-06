@@ -139,16 +139,13 @@ function formatSize(bytes: number): string {
   return unit === 0 ? `${n} B` : `${n < 10 ? n.toFixed(1) : Math.round(n)} ${UNITS[unit]}`;
 }
 
-/** What stays in projects, and how to remove it there. omp's sessions live in omp's own folder, not the project's `.omp/`. */
+/** What stays in projects, and how to remove it there. omp's sessions live in omp's own folder, not the project. */
 function leftovers(): string {
-  const files =
-    process.platform === "win32"
-      ? "Remove-Item -Recurse ternlatex.toml, build, .omp\\AGENTS.md, .omp\\skills"
-      : "rm -r ternlatex.toml build .omp/AGENTS.md .omp/skills";
+  const files = process.platform === "win32" ? "Remove-Item -Recurse ternlatex.toml, build" : "rm -r ternlatex.toml build";
   return [
     "",
     "Projects are left as they are. Each still has:",
-    "  ternlatex.toml, build/ (the outdir), and omp's project rules and skills (.omp/AGENTS.md, .omp/skills/)",
+    "  ternlatex.toml and build/ (the outdir)",
     `    remove with: ${files}`,
     `  save checkpoints on the ${CHECKPOINT_REF} git ref`,
     `    remove with: git update-ref -d ${CHECKPOINT_REF}`,

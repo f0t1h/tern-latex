@@ -31,7 +31,7 @@ When asked to address review comments (all of them, or one author's):
 1. `ternlatex changes --author ID`, keep the `comment` lines.
 2. For each comment, read the surrounding text and make the change it asks for. Mark your prose edits as tracked changes (below), unless the user asked for direct edits.
 3. When a comment is dealt with, resolve it: `ternlatex accept COMMENT_ID` (removes the comment; accept and reject do the same for comments). If you disagree, or the comment needs the author's judgement, leave it open and add your reply next to it as `\comment[id=omp]{…}`.
-4. `ternlatex build`; report per comment: `file:line: comment → what you did` (or why it stays open).
+4. `latex_build`; report per comment: `file:line: comment → what you did` (or why it stays open).
 
 ## Summarise
 

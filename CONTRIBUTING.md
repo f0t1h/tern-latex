@@ -64,7 +64,7 @@ bun scripts/build.ts --target bun-linux-x64 --target bun-linux-arm64   # cross-c
 ```
 
 Targets: `bun-darwin-arm64`, `bun-darwin-x64`, `bun-linux-x64`, `bun-linux-arm64`, `bun-windows-x64`.
-The build embeds the git-tracked viewer, templates, omp kit and Tern plugin, and pdf.js, into the
+The build embeds the git-tracked viewer, templates, omp extension and Tern plugin, and pdf.js, into the
 executable.
 
 ## Releasing
@@ -81,6 +81,7 @@ A release is a git tag; there are no release binaries.
 - `viewer/`: the pdf.js viewer.
 - `plugin.toml`, `tern-plugin/`: the Tern plugin.
 - `templates/`: project templates.
-- `agent/`: the omp kit (project rules and skills).
+- `omp/`: the omp extension `ternlatex agent` loads with `omp -e` (project rules, skills, and the
+  `latex_build`/`latex_snapshot`/`latex_show` tools).
 - `scripts/build.ts`: compiles a local binary.
 - `test/`: tests and fixtures.

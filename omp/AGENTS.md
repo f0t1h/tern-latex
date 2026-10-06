@@ -3,7 +3,7 @@
 This is a LaTeX project edited live in Tern.
 The user watches the PDFs in a viewer block; `ternlatex dev` rebuilds on every save.
 `ternlatex.toml` at the project root lists the documents (`root = "main.tex"` for one, or `[[documents]]` tables with `name` and `root` for several, e.g. paper, supplement, slides), plus `engine` and `outdir`.
-Run `ternlatex docs` to see them. Each document builds to `build/<name>.pdf`; a save rebuilds only the documents that read the changed file, and sources identical to one of the last 8 builds reuse its PDF (`ternlatex build --force` compiles anyway).
+Run `ternlatex docs` to see them. Each document builds to `build/<name>.pdf`; a save rebuilds only the documents that read the changed file, and sources identical to one of the last 8 builds reuse its PDF (`latex_build` with `force` compiles anyway).
 
 ## Toolchain
 
@@ -12,11 +12,16 @@ Run `ternlatex docs` to see them. Each document builds to `build/<name>.pdf`; a 
 - Bibliographies: bibtex + natbib, run automatically by Tectonic. biber/biblatex-biber is unavailable.
 - Fonts: prefer bundle fonts (Libertinus, TeX Gyre, Latin Modern, Fira) via `fontspec`, or project-local fonts in `fonts/` loaded with `fontspec` `Path=fonts/`. System fonts work but are not reproducible.
 
+## Tools
+
+- `latex_build` (`doc`, `force` optional): build every document, or one, through the dev server if running. Returns `file:line: severity: message` lines.
+- `latex_snapshot` (`page` or `at` = FILE:LINE, `doc` optional): render a page of the built PDF and return it as an image. `at` renders the page that line lands on.
+- `latex_show` (`at` = FILE:LINE, `doc` optional): scroll the user's viewer to that spot (switching document if needed) and highlight it.
+
 ## Commands
 
-- `ternlatex build [--doc NAME]`: build every document, or one (through the dev server if running). Prints `file:line: severity: message`; exit 1 on errors.
-- `ternlatex snapshot --page N [--doc NAME]` or `ternlatex snapshot FILE:LINE`: render a page to PNG and print its path. Read the PNG to check the result. FILE:LINE finds the document containing that line.
-- `ternlatex show FILE:LINE [--doc NAME]`: scroll the user's viewer to that spot (switching document if needed) and highlight it.
+Everything else runs through the `ternlatex` CLI:
+
 - `ternlatex lint [FILE...]`: chktex diagnostics.
 - `ternlatex tool NAME ARGS...` (tectonic, pandoc, latexdiff, git, …): run a tool exactly as ternlatex resolves it. Never call tools by path or assume where they are installed.
 - `ternlatex proofread FILE[:FROM-TO]... [--doc NAME]`: mechanical proofreading by a no-reasoning model, one call per paragraph; fixes land as `\replaced[id=proof]{…}{…}` suggestions for the user to accept. Use it instead of proofreading prose yourself.
@@ -30,10 +35,10 @@ Run `ternlatex docs` to see them. Each document builds to `build/<name>.pdf`; a 
 ## Working loop
 
 1. Edit the source.
-2. Run `ternlatex build`.
+2. Call `latex_build`.
 3. Read the diagnostics. Fix every error you caused, then warnings you caused.
-4. Run `ternlatex snapshot` on the affected page and look at the PNG.
-5. Run `ternlatex show FILE:LINE` when the user should look at the change.
+4. Call `latex_snapshot` on the affected page and look at the image.
+5. Call `latex_show` when the user should look at the change.
 
 Never leave the build broken. If you cannot fix an error, revert your change and tell the user.
 

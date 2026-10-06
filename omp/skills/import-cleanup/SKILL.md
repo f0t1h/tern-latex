@@ -5,7 +5,7 @@ description: Clean up a LaTeX document produced by pandoc (from Word, Markdown o
 
 # Import cleanup
 
-Use after `pandoc` converted a document into this project. Work in logical steps; after each step run `ternlatex build` and fix anything you broke before moving on, so each step is a reviewable diff.
+Use after `pandoc` converted a document into this project. Work in logical steps; after each step call `latex_build` and fix anything you broke before moving on, so each step is a reviewable diff.
 
 ## 1. Preamble
 
@@ -47,4 +47,4 @@ If pandoc produced citeproc output (a literal reference list), keep it and tell 
 
 ## Done
 
-Build is clean (no errors, no overfull boxes), `ternlatex snapshot` of a few representative pages looks right, and you report a short list of steps performed plus anything left for the author.
+Build is clean (no errors, no overfull boxes), `latex_snapshot` of a few representative pages looks right, and you report a short list of steps performed plus anything left for the author.

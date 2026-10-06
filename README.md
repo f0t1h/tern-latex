@@ -80,9 +80,9 @@ sizes, and asks first: the Tern plugin and its data folder, the `ternlatex` comm
 PATH** (or `install-cli`) put on your `PATH`, a `bun add -g` install, the cache (tools and TeX packages)
 and ternlatex's data folder. `--keep-cache` keeps the cache; `--yes` skips the question.
 
-Projects are left as they are. Each keeps `ternlatex.toml`, `build/`, omp's project rules and skills
-(`.omp/AGENTS.md`, `.omp/skills/`) and the `refs/ternlatex/checkpoints` git ref; `ternlatex uninstall` ends
-with the commands that remove them. A running `ternlatex dev` keeps running until you stop it.
+Projects are left as they are. Each keeps `ternlatex.toml`, `build/` and the `refs/ternlatex/checkpoints`
+git ref; `ternlatex uninstall` ends with the commands that remove them. A running `ternlatex dev` keeps
+running until you stop it.
 
 ## Quick start
 
@@ -318,10 +318,13 @@ under `% Imported from Zotero by ternlatex`) and the PDF rebuilds. Existing entr
 Or ask omp: `/skill:cite the 2020 Smith paper on X here`. `ternlatex refs sync`, `refs search QUERY` and
 `refs add KEY…` do the same by hand.
 
-### omp skills
+### omp skills and tools
 
-`ternlatex init` and `ternlatex import` install project rules for omp (`.omp/AGENTS.md`) and eight skills.
-`ternlatex setup-agent` reinstalls them.
+The omp block ternlatex opens loads ternlatex's omp extension (`omp -e`), so nothing is written into your
+project for omp. It gives omp the project rules, eight skills, and three tools for the edit loop:
+`latex_build` (build and read the diagnostics), `latex_snapshot` (look at a rendered page) and `latex_show`
+(scroll your viewer to a line). Projects set up by ternlatex 0.1 had these rules and skills as files in
+`.omp/`; the omp block removes those copies the first time it starts.
 
 | Skill | Does |
 |---|---|
@@ -343,7 +346,6 @@ Run commands anywhere inside a project (a folder with `ternlatex.toml`), or pass
 |---|---|
 | `init [DIR] [--template article\|report\|letter\|beamer] [--force]` | creates a project from a template |
 | `import SRC [DIR]` | adopts a `.tex` project in place, or converts `.docx` `.odt` `.md` `.html` `.rtf` `.epub` with pandoc |
-| `setup-agent [DIR]` | reinstalls the omp rules and skills into `DIR/.omp` |
 | `setup-tern` | connects Tern to this ternlatex and reloads Tern's plugins (`dev` does this by itself) |
 | `install-cli [DIR]` | puts a `ternlatex` command for this ternlatex into `DIR` (default: Bun's bin folder) |
 | `uninstall [--keep-cache] [--yes]` | removes ternlatex outside your projects: the Tern plugin, launchers, a global Bun install, the cache and the data folder |

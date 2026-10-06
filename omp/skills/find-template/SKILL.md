@@ -5,7 +5,7 @@ description: Find and install the right LaTeX template or document class for a v
 
 # Find template
 
-Goal: this project builds with the venue's own class/style, with the user's content kept, and `ternlatex build` reports 0 errors.
+Goal: this project builds with the venue's own class/style, with the user's content kept, and `latex_build` reports 0 errors.
 The venue class owns the layout. Do not restyle it, do not load `style/ternlatex.sty` with it, and keep the options the venue requires.
 
 ## 1. Pin down the target
@@ -133,10 +133,10 @@ Go through this checklist for the template and for the user's preamble:
 4. If `ternlatex.toml`'s `root` changed, remove stale outputs of the old root from `build/` only if they confuse you. Never edit `build/` otherwise.
 
 Then:
-1. Run `ternlatex build` and fix errors one at a time, starting with the first (see `/skill:fix-build`). A missing image or `\input` file means you did not copy something from the kit.
+1. Call `latex_build` and fix errors one at a time, starting with the first (see `/skill:fix-build`). A missing image or `\input` file means you did not copy something from the kit.
 2. Repeat until there are 0 errors. Fix the warnings you caused (undefined citations, overfull boxes in the user's content). Leave the kit's own warnings.
-3. Run `ternlatex snapshot --page 1` and read the PNG. Check: the class layout (columns, title block, venue footer or copyright block), the anonymous author block when reviewing, the fonts, and the bibliography style.
-4. Run `ternlatex show main.tex:1` (or the new root) so the user sees the result. It needs `ternlatex dev` running (exit 2, "no dev server running", otherwise). Without a dev server, give the user the snapshot path instead.
+3. Call `latex_snapshot` with `page: 1` and look at the image. Check: the class layout (columns, title block, venue footer or copyright block), the anonymous author block when reviewing, the fonts, and the bibliography style.
+4. Call `latex_show` with `at: "main.tex:1"` (or the new root) so the user sees the result. It needs `ternlatex dev` running ("no dev server running" otherwise); without a dev server, tell the user the snapshot path instead.
 
 ## 6. Report
 

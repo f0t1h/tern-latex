@@ -1,0 +1,9 @@
+{
+  "name": "ternlatex-omp",
+  "private": true,
+  "type": "module",
+  "description": "ternlatex's omp extension: project context, skills, and build/snapshot/show tools",
+  "omp": {
+    "extensions": ["./extension.ts"]
+  }
+}

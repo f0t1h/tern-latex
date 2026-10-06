@@ -3,7 +3,6 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSy
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { copyAssets } from "../assets.ts";
 import { CONFIG_FILE, posix, renderConfig, UsageError } from "../config.ts";
-import { setupAgent } from "./agent.ts";
 import { build } from "./build.ts";
 import { ensureGit } from "./project.ts";
 import { resolveTool } from "../tools.ts";
@@ -42,8 +41,7 @@ export async function importProject(src: string, dest: string | undefined): Prom
   if (!existsSync(join(dir, CONFIG_FILE))) writeFileSync(join(dir, CONFIG_FILE), renderConfig(roots));
   console.log(`adopted ${dir}: ${roots.length === 1 ? `root = ${roots[0]}` : `${roots.length} documents (${roots.join(", ")}); edit [[documents]] in ${CONFIG_FILE} to drop any`}`);
   for (const w of compatibility(dir)) console.warn(`warning: ${w}`);
-  await setupAgent(dir);
-  await ensureGit(dir); // After the kit, so the initial commit includes .omp/.
+  await ensureGit(dir);
   return build(dir, false);
 }
 
@@ -84,7 +82,6 @@ async function convert(src: string, from: string, dir: string): Promise<number> 
   // The house style comes along so the cleanup skill can move the preamble onto it.
   await copyAssets("templates/_shared/", dir, { force: true });
   writeFileSync(join(dir, CONFIG_FILE), renderConfig(["main.tex"]));
-  await setupAgent(dir);
   await ensureGit(dir);
   console.log(`converted ${src} → ${join(dir, "main.tex")}`);
   const code = await build(dir, false);

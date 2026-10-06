@@ -13,7 +13,7 @@ Edit only `style/ternlatex.sty`. In imported projects without it, edit the exist
 
 ## Before
 
-1. `ternlatex snapshot --page 1` and a typical body page (one with a heading, a float and a caption). Read the PNGs.
+1. `latex_snapshot` of page 1 and of a typical body page (one with a heading, a float and a caption). Look at the images.
 2. Read the relevant section of the style file.
 
 ## Knobs
@@ -31,6 +31,6 @@ Keep the existing load order: hyperref, then cleveref, last.
 
 ## After
 
-1. `ternlatex build`; no new errors or warnings. Font changes often cause missing-glyph warnings (`Missing character`): fix or pick another font.
+1. `latex_build`; no new errors or warnings. Font changes often cause missing-glyph warnings (`Missing character`): fix or pick another font.
 2. Snapshot the same pages and compare with the before images. Check that text did not reflow into new overfull boxes.
-3. `ternlatex show` a representative spot and summarise what changed.
+3. `latex_show` a representative spot and summarise what changed.

@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { parseArgs } from "node:util";
-import { runAgent, setupAgent } from "./commands/agent.ts";
+import { runAgent } from "./commands/agent.ts";
 import { build } from "./commands/build.ts";
 import { bundle } from "./commands/bundle.ts";
 import { restartServer, stopServer } from "./commands/control.ts";
@@ -38,7 +38,6 @@ project setup
                           new project from a template (default: article in the current directory)
   import SRC [DIR]        adopt an existing .tex project in place (SRC = root .tex or its directory),
                           or convert .docx/.odt/.md/.html/.rtf/.epub with pandoc into DIR
-  setup-agent [DIR]       (re)install the omp instructions and skills into DIR/.omp
   setup-tern              link (or update) the ternlatex Tern plugin and reload Tern's plugins;
                           dev inside Tern does this by itself. A plugin installed from Tern's Plugins
                           page is kept and pointed at this ternlatex
@@ -80,8 +79,9 @@ writing
                           alternatives for the sentence at LINE:COL (or the range up to --to) from omp
                           ([rewrite] model); prints them, never writes files
   lint [FILE...]          chktex diagnostics (default: every .tex file in the project)
-  agent [DIR] [--path P]  start omp in the project, continuing its latest omp session (P: PATH for omp;
-                          a ternlatex launcher is put first)
+  agent [DIR] [--path P]  start omp in the project with ternlatex's omp extension (project rules, skills,
+                          latex_build/latex_snapshot/latex_show tools), continuing its latest omp session
+                          (P: PATH for omp; a ternlatex launcher is put first)
   bundle FILE...          is a class/package/.bst in the pinned TeX Live bundle? prints its version
   tool NAME [ARGS...] | tool --path NAME
                           run (or print) the tectonic/pandoc/latexdiff/perl/git/chktex/latexmk/omp/tern
@@ -129,10 +129,6 @@ async function main(argv: string[]): Promise<number> {
       const { positionals } = parseArgs({ args: rest, allowPositionals: true, options: {} });
       if (!positionals[0]) throw new UsageError("import needs a source: a .tex file, a project directory, or a document pandoc can read");
       return importProject(positionals[0], positionals[1]);
-    }
-    case "setup-agent": {
-      const { positionals } = parseArgs({ args: rest, allowPositionals: true, options: {} });
-      return setupAgent(positionals[0] ?? ".");
     }
     case "setup-tern": {
       parseArgs({ args: rest, allowPositionals: false, options: {} });

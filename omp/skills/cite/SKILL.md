@@ -30,7 +30,7 @@ The first column is the key ternlatex writes into the bib (Zotero's citation key
 1. `ternlatex refs add key` appends the entry to the project's bib file (`[zotero] bib` in ternlatex.toml, default refs.bib) under a `% Imported from Zotero by ternlatex` comment. It never rewrites existing entries and skips keys that are already defined.
    - `missing: key` means the key did not resolve in Zotero; recheck it with `refs search`.
    - An error naming "Allow other applications on this computer to communicate with Zotero" means the Zotero desktop app is closed or that setting is off: ask the user to start Zotero and enable it (Settings → Advanced). A 403 from api.zotero.org means ZOTERO_API_KEY is missing or lacks access.
-2. `ternlatex build`: there must be no `Citation … undefined` warning for the key.
-3. `ternlatex show file:line` to reveal the citation in the viewer.
+2. `latex_build`: there must be no `Citation … undefined` warning for the key.
+3. `latex_show` at the citation's `file:line` to reveal it in the viewer.
 
 `ternlatex refs sync` imports every cited key that no .bib file defines yet. With `auto_import = true` (the default), the dev server does this on save when a build reports undefined citations, so a correct key in the text usually resolves by itself; `refs add` makes it explicit and reports problems immediately.

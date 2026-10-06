@@ -61,6 +61,6 @@ Add `\input{tables/<name>}` at the requested spot, on its own line, and referenc
 
 ## Verify
 
-1. `ternlatex build`; fix any error or overfull `\hbox` warning that points at the table.
-2. `ternlatex snapshot tables/<name>.tex:1` (or `--page N`) and read the PNG: check alignment on the decimal point, header wrapping, width against the text block, and that the float landed near its reference.
-3. Fix and repeat until clean, then `ternlatex show tables/<name>.tex:1`.
+1. `latex_build`; fix any error or overfull `\hbox` warning that points at the table.
+2. `latex_snapshot` with `at: "tables/<name>.tex:1"` (or a `page`) and look at the image: check alignment on the decimal point, header wrapping, width against the text block, and that the float landed near its reference.
+3. Fix and repeat until clean, then `latex_show` with `at: "tables/<name>.tex:1"`.

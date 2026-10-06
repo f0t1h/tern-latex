@@ -1,13 +1,13 @@
 ---
 name: fix-build
-description: Diagnose and fix a failing or warning-laden LaTeX build under Tectonic, starting from build/status.json or ternlatex build output and fixing the first error first until the build is clean.
+description: Diagnose and fix a failing or warning-laden LaTeX build under Tectonic, starting from build/status.json or latex_build output and fixing the first error first until the build is clean.
 ---
 
 # Fix build
 
 ## Loop
 
-1. Run `ternlatex build` (or read `build/status.json` if the dev server just built). Diagnostics are `file:line: severity: message`.
+1. Call `latex_build` (or read `build/status.json` if the dev server just built). Diagnostics are `file:line: severity: message`.
 2. Fix the first error only. Later errors usually cascade from it.
 3. Rebuild. Repeat until there are no errors.
 4. Then handle warnings: undefined references/citations, overfull boxes, missing characters.
@@ -28,4 +28,4 @@ Never paper over an error by deleting content or commenting out a package the do
 
 ## Done
 
-The build exits 0, `ternlatex build` shows no errors, and you have listed what you changed and why.
+`latex_build` shows no errors, and you have listed what you changed and why.

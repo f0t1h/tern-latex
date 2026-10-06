@@ -19,7 +19,8 @@ export interface AssetRoot {
 export const ASSET_ROOTS: Record<string, AssetRoot> = {
   "viewer/": { source: { repo: "viewer" } },
   "templates/": { source: { repo: "templates" } },
-  "agent/": { source: { repo: "agent" } },
+  // ternlatex's omp extension: a compiled ternlatex extracts it for `omp -e` (commands/agent.ts ompExtension).
+  "omp/": { source: { repo: "omp" } },
   // The Tern plugin package, laid out as the repo root is: plugin.toml and tern-plugin/. Its config.json is
   // written per machine at install, never shipped.
   "tern-package/": { source: { repo: "." }, include: ["plugin.toml", "tern-plugin"], only: /^(?!config\.json$)/ },
