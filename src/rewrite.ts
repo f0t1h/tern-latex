@@ -147,6 +147,22 @@ export function sentenceAt(t: string, at: number): [number, number] {
   return [start, end];
 }
 
+/**
+ * Widens [start, end) of SOURCE (file REL) to the start of the sentence holding `start` and the end of the one holding
+ * `end`, for the edges `exact` marks false (a selection's edge a macro rendered); exact edges stay.
+ */
+export function widenToSentences(source: string, rel: string, start: number, end: number, exact: { start: boolean; end: boolean }): [number, number] {
+  const paras = paragraphs(source, rel);
+  const holding = (o: number) => paras.find((p) => o >= p.start && o <= p.end);
+  let s = start;
+  let e = end;
+  const first = exact.start ? undefined : holding(start);
+  if (first) s = first.start + sentenceAt(first.text, start - first.start)[0];
+  const last = exact.end ? undefined : holding(end - 1);
+  if (last) e = last.start + sentenceAt(last.text, end - 1 - last.start)[1];
+  return [Math.min(s, start), Math.max(e, end)];
+}
+
 /** Sorted texts of the protected spans of S. */
 function protectedTexts(s: string): string[] {
   return protectedSpans(s)

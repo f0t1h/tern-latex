@@ -4,12 +4,13 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { assetBytes } from "./assets.ts";
 import { type Builder, type Status, writeAtomic } from "./builder.ts";
-import { DICTATION_AUTHOR } from "./changes.ts";
+import { DICTATION_AUTHOR, OMP_AUTHOR } from "./changes.ts";
 import { type DocConfig, docPaths, paths, posix, type ReviewAuthor } from "./config.ts";
 import { type Diagnostic, formatDiagnostic } from "./diagnostics.ts";
 import { SyncTex } from "./synctex.ts";
-import { lineEndOffset, locateSelection } from "./locate.ts";
+import { lineEndOffset, type LocatedRange, locateRange, locateSelection } from "./locate.ts";
 import { type Hunk, writeSuggestions } from "./proofread.ts";
+import { offsetOf, type Position, positionOf, type RewriteRequest, type RewriteResult, widenToSentences } from "./rewrite.ts";
 import { pcm16, type SpeechStatus, spokenLatex } from "./speech.ts";
 import type { TernKey } from "./ternplugin.ts";
 import { openWithDefaultApp } from "./tools.ts";
@@ -34,6 +35,8 @@ export interface ServerOptions {
   review?: ReviewApi;
   /** Proofreads a file range (src/proofread.ts) and returns a summary for the viewer. */
   proofread?: (target: { file: string; from: number; to: number }) => Promise<ProofreadSummary>;
+  /** Rewrite alternatives for a source range (src/rewrite.ts); nothing is written. */
+  rewrite?: (req: RewriteRequest) => Promise<RewriteResult>;
   /** Restarts the dev server in place (`ternlatex restart`); called after the response is sent. */
   restart?: () => void;
   /** Stops the dev server (`ternlatex stop`); called after the response is sent. */
@@ -188,6 +191,11 @@ export async function startServer(o: ServerOptions): Promise<DevServer> {
     const [from, to] = b && b.file === a.file ? [Math.min(a.line, b.line), Math.max(a.line, b.line)] : [a.line, a.line];
     return { file: sourceRel(a.file), from, to };
   };
+  /** The source range of a PDF selection's text for a rewrite (locateRange), SyncTeX's guess breaking ties. */
+  const selectionRange = async (doc: DocConfig, page: number, start: { x: number; y: number }, text: string): Promise<LocatedRange | null> => {
+    const a = (await loadSynctex(doc))?.reverse(page, start.x, start.y) ?? null;
+    return locateRange(cfg, doc, text, a ? { file: sourceRel(a.file), line: a.line } : undefined);
+  };
   /** Status of omp's speech model: checked at start in the background, again on a request while not ready (`omp setup speech` needs no restart). */
   let speech = o.dictation?.status();
   const speechReady = async (api: DictationApi): Promise<SpeechStatus> => {
@@ -227,6 +235,7 @@ export async function startServer(o: ServerOptions): Promise<DevServer> {
           history: Boolean(o.history),
           review: Boolean(o.review),
           proofread: Boolean(o.proofread),
+          rewrite: Boolean(o.rewrite),
           ...(o.keys ? { keys: o.keys } : {}),
           ...(o.dictation ? { dictation: await speechReady(o.dictation) } : {}),
         };
@@ -332,6 +341,48 @@ export async function startServer(o: ServerOptions): Promise<DevServer> {
         } finally {
           proofreading = false;
         }
+      }
+      // Alternatives for the source of a selection. Its words must be found in the sources (SyncTeX lines alone don't
+      // bound a passage); an edge a macro rendered (a citation, \TeX) widens to its whole sentence. Nothing is
+      // written; /rewrite/apply does that with the one the user picks.
+      if (route === "POST /rewrite") {
+        if (!o.rewrite) return send(res, 404, { error: "rewriting unavailable" });
+        const { page, start, text, instruction } = body;
+        if (typeof page !== "number" || !isPoint(start) || typeof text !== "string") return send(res, 400, { error: "page, start {x,y} and text required" });
+        const loc = await selectionRange(doc, page, start, text);
+        if (!loc) return send(res, 404, { error: "couldn't find those words in the source; select at least two words of running text" });
+        const abs = join(cfg.dir, loc.file);
+        const src = readFileSync(abs, "utf8");
+        const [s, e] = widenToSentences(src, loc.file, loc.start, loc.end, { start: loc.startExact, end: loc.endExact });
+        const request = {
+          file: abs,
+          at: positionOf(src, s),
+          to: positionOf(src, e),
+          count: cfg.rewrite.count,
+          instruction: typeof instruction === "string" && instruction.trim() ? instruction.trim() : undefined,
+        };
+        return send(res, 200, await o.rewrite(request));
+      }
+      // Replaces from..to of a project file with `replacement` when it still reads `text` (the user may have edited
+      // it meanwhile); checkpointed first and undone when it breaks a document's build, like other server edits.
+      if (route === "POST /rewrite/apply") {
+        const { file, from, to, text, replacement } = body;
+        const abs = inProject(file);
+        if (!abs || !existsSync(abs)) return send(res, 400, { error: "file outside project" });
+        if (!isPosition(from) || !isPosition(to) || typeof text !== "string" || typeof replacement !== "string") {
+          return send(res, 400, { error: "from, to {line, col}, text and replacement required" });
+        }
+        const rel = posix(relative(cfg.dir, abs));
+        const src = readFileSync(abs, "utf8");
+        const s = offsetOf(src, from);
+        const e = offsetOf(src, to);
+        if (src.slice(s, e) !== text) return send(res, 409, { error: `${rel} changed meanwhile; rewrite again` });
+        const hunk: Hunk = { file: rel, start: s, end: e, old: text, new: replacement, why: "", line: from.line };
+        // A direct edit: the author would only name tracked markup.
+        const r = await writeSuggestions(cfg, [hunk], new Map([[rel, src]]), { author: OMP_AUTHOR, direct: true, build: () => builder.request(), label: "rewrite" });
+        if (r.reverted) return send(res, 409, { error: `not applied: ${r.reverted}` });
+        if (!r.hunks.length) return send(res, 409, { error: `${rel} changed meanwhile; rewrite again` });
+        return send(res, 200, { file: rel, line: from.line });
       }
       if (route === "POST /open") {
         const abs = inProject(body.file);
@@ -487,6 +538,10 @@ async function sendAsset(res: ServerResponse, rel: string): Promise<void> {
 
 function isPoint(v: unknown): v is { x: number; y: number } {
   return Boolean(v && typeof v === "object" && "x" in v && "y" in v && typeof v.x === "number" && typeof v.y === "number");
+}
+
+function isPosition(v: unknown): v is Position {
+  return Boolean(v && typeof v === "object" && "line" in v && "col" in v && Number.isInteger(v.line) && Number.isInteger(v.col) && Number(v.line) >= 1 && Number(v.col) >= 1);
 }
 
 function isDiagnostic(v: unknown): v is Diagnostic {

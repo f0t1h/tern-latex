@@ -42,12 +42,24 @@ test("a selection inside macro arguments maps to its own source lines, not where
   const { cfg, doc } = project();
   const sel = "Distributed widget calibration (supervisor: Dr. Ada Example)";
   // SyncTeX blamed line 11 (the macro's closing brace) in a real CV.
-  expect(locateSelection(cfg, doc, sel, { file: "main.tex", line: 11 })).toEqual({ file: "main.tex", from: 5, to: 5, end: CV.indexOf("Example)") + "Example)".length });
+  expect(locateSelection(cfg, doc, sel, { file: "main.tex", line: 11 })).toEqual({
+    file: "main.tex",
+    from: 5,
+    to: 5,
+    start: CV.indexOf("Distributed widget calibration"),
+    end: CV.indexOf("Example)") + "Example)".length,
+  });
 });
 
 test("of several occurrences, the one nearest the SyncTeX guess wins", () => {
   const { cfg, doc } = project();
-  expect(locateSelection(cfg, doc, "Distributed widget calibration", { file: "main.tex", line: 8 })).toEqual({ file: "main.tex", from: 8, to: 8, end: CV.lastIndexOf("calibration") + "calibration".length });
+  expect(locateSelection(cfg, doc, "Distributed widget calibration", { file: "main.tex", line: 8 })).toEqual({
+    file: "main.tex",
+    from: 8,
+    to: 8,
+    start: CV.lastIndexOf("Distributed widget calibration"),
+    end: CV.lastIndexOf("calibration") + "calibration".length,
+  });
 });
 
 test("words that are not in the sources give null (SyncTeX is used instead)", () => {
@@ -61,8 +73,10 @@ test("the selection's end offset lands after escaped characters, past citations 
   writeFileSync(join(cfg.dir, "main.tex"), src);
   // The PDF shows the citation as a number: only the selection's head and tail words must match.
   const found = locateSelection(cfg, doc, "Profits rose sharply last year, see [1], by 50% for R&D at Smith & Co");
-  expect(found).toEqual({ file: "main.tex", from: 3, to: 3, end: src.indexOf("Smith \\& Co") + "Smith \\& Co".length });
-  expect(locateSelection(cfg, doc, "for R&D")?.end).toBe(src.indexOf("R\\&D") + "R\\&D".length);
+  expect(found).toEqual({ file: "main.tex", from: 3, to: 3, start: src.indexOf("Profits"), end: src.indexOf("Smith \\& Co") + "Smith \\& Co".length });
+  const rd = locateSelection(cfg, doc, "for R&D");
+  // Start and end bound exactly the selected source, so replacing start..end rewrites the selection.
+  expect(rd && src.slice(rd.start, rd.end)).toBe("for R\\&D");
 });
 
 test("lineEndOffset: the end of a line before its break, the file's end past the last line", () => {

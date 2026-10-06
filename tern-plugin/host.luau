@@ -1496,8 +1496,8 @@ tern.block.define("cite", {
 })
 
 ---------------------------------------------------------------------------
--- Block `rewrite` (picture-in-picture over an editor): alternatives for the
--- sentence (or selection) from `ternlatex rewrite`, one replaces it.
+-- Block `rewrite` (docked below an editor): alternatives for the sentence
+-- (or selection) from `ternlatex rewrite`, one replaces it.
 
 type Spot = { line: number, col: number }
 type Alternative = { text: string, note: string }

@@ -1222,6 +1222,27 @@ local function tex_available(cx: WindowCx): boolean
 	return pane ~= nil and pane.kind == "file" and pane.path ~= nil and ends(pane.path :: string, ".tex")
 end
 
+-- Opens host block `kind` docked below editor `under`, sharing its height, and focuses it; `what` titles the
+-- toast when it does not open. Rewrite uses it: its alternatives need more room than a picture in picture,
+-- which Tern gives plugins no way to size. Callers return right after (create_last).
+local function dock_below(cx: WindowCx, kind: string, args: { string }, under: number, what: string)
+	create_last(function(): number?
+		return cx:new_block(kind, args, "beside", { focus = false })
+	end, function(block: number?, why: any, c: WindowCx)
+		local ok, err = pcall(function()
+			local pane = host_block(block)
+			if not c.layout:move(pane, under, "down", { focus = true }) then
+				c.layout:close(pane)
+				error("the block did not move below the editor", 0)
+			end
+			c.layout:focus(pane)
+		end)
+		if not ok then
+			c:toast("error", what, tostring(why or err))
+		end
+	end)
+end
+
 -- Opens host block `kind` floating at `corner` over editor `over`; `what`
 -- titles the toast when it does not. Callers return right after
 -- (create_last).
@@ -1304,7 +1325,7 @@ tern.command(keyed({
 				if to then tostring(to.col) else "",
 				tostring(editor),
 			}
-			float_block(c, REWRITE, args, editor, "br", true, "Rewrite sentence did not open")
+			dock_below(c, REWRITE, args, editor, "Rewrite sentence did not open")
 		end
 		-- The CLI reads the file from disk: save unsaved edits first so the sentence matches the buffer.
 		cx.docs:save(path):next(function(_saved, save_err, c0)

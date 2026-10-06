@@ -98,6 +98,7 @@
       <div id="sel-actions" role="group" aria-label="Selection actions">
         <button id="sel-source" type="button" title="Show the source of this passage in the editor (⌘-click does this for any spot)">Source</button>
         <button id="sel-proofread" type="button" title="Fix typos, grammar and punctuation in the source of this passage; suggestions land in ✎ Review">Proofread</button>
+        <button id="sel-rewrite" type="button" hidden title="Alternative wordings for this passage; pick one to replace it in the source (key R)">Rewrite…</button>
         <button id="sel-ask" type="button" title="Tell omp what to do with this passage (type an instruction, Enter sends)">Ask omp…</button>
         <button id="sel-dictate" type="button" hidden title="Speak text to go after this passage; it lands as a suggestion in ✎ Review (key D)">🎙 Dictate</button>
       </div>
@@ -112,6 +113,19 @@
       <span id="dictate-text" class="muted" aria-live="polite">Listening…</span>
       <button id="dictate-done" type="button" title="Put what you said after the selection, as a suggestion (Enter or D)">Done</button>
       <button id="dictate-cancel" type="button" title="Discard the recording (Esc)">Cancel</button>
+    </div>
+    <div id="rewrite-panel" hidden role="dialog" aria-label="Rewrite">
+      <div class="rw-head">
+        <span class="rw-title">Rewrite</span>
+        <span id="rewrite-model" class="muted"></span>
+        <button id="rewrite-close" type="button" title="Close (Esc)" aria-label="Close">×</button>
+      </div>
+      <div id="rewrite-original"></div>
+      <input id="rewrite-input" type="text" autocomplete="off" spellcheck="false"
+        placeholder="How to rewrite it, e.g. shorter, more formal (Enter asks again)">
+      <div id="rewrite-status" hidden><span class="spinner" aria-hidden="true"></span><span id="rewrite-status-text"></span></div>
+      <ol id="rewrite-list"></ol>
+      <div class="rw-foot muted">1–9 or click: use it · ↑↓ Enter · / instruct · R ask again · Esc close</div>
     </div>
   </main>
 

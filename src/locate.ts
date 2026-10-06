@@ -14,7 +14,9 @@ export interface Located {
   file: string;
   from: number;
   to: number;
-  /** Source offset right after the selection's last character (where dictation inserts). */
+  /** Source offset of the selection's first character (where a rewrite starts). */
+  start: number;
+  /** Source offset right after the selection's last character (where dictation inserts, a rewrite ends). */
   end: number;
 }
 
@@ -111,8 +113,70 @@ export function locateSelection(cfg: Config, doc: DocConfig, selection: string, 
       const from = lineAt(src, plain.at[s]);
       const to = lineAt(src, last);
       const distance = hint && hint.file === file ? Math.abs(from - hint.line) : hint ? 1e6 : 0;
-      if (!best || distance < best.distance) best = { file, from, to, end: last + 1, distance };
+      if (!best || distance < best.distance) best = { file, from, to, start: plain.at[s], end: last + 1, distance };
     }
   }
-  return best ? { file: best.file, from: best.from, to: best.to, end: best.end } : null;
+  return best ? { file: best.file, from: best.from, to: best.to, start: best.start, end: best.end } : null;
+}
+
+/** A selection's source range from locateRange; an edge that isn't exact is where its nearest found words begin or end. */
+export interface LocatedRange {
+  file: string;
+  start: number;
+  end: number;
+  /** The selection's first (last) words were found as they are; otherwise the edge falls inside the selection. */
+  startExact: boolean;
+  endExact: boolean;
+}
+
+/** The first run of `size` consecutive WORDS, trying start indexes `ks` in order, found in HAY at or after `from`. */
+function findRun(words: string[], hay: string, size: number, ks: number[], from: number): { k: number; at: number } | null {
+  for (const k of ks) {
+    const probe = words.slice(k, k + size).join(" ");
+    const at = hay.indexOf(probe, from);
+    if (at >= 0) return { k, at };
+  }
+  return null;
+}
+
+/**
+ * Like locateSelection, but also for selections whose first or last words a macro rendered (a citation's
+ * "Knuth (1984)", `\TeX`): the range then starts at the first run of three (two in short selections) of its words
+ * found in the sources and ends after the last such run, nearest HINT, flagged inexact so the caller can widen it
+ * (to whole sentences, for a rewrite). Null when no run is found.
+ */
+export function locateRange(cfg: Config, doc: DocConfig, selection: string, hint?: { file: string; line: number }): LocatedRange | null {
+  const exact = locateSelection(cfg, doc, selection, hint);
+  if (exact) return { file: exact.file, start: exact.start, end: exact.end, startExact: true, endExact: true };
+  const words = normalise(selection).split(" ").filter(Boolean);
+  if (words.length < 2) return null;
+  const size = Math.min(words.length, words.length >= 6 ? 3 : 2);
+  const forward = Array.from({ length: words.length - size + 1 }, (_, k) => k);
+  const backward = [...forward].reverse();
+  let best: (LocatedRange & { distance: number }) | null = null;
+  for (const file of docTexFiles(cfg, doc)) {
+    const abs = join(cfg.dir, file);
+    if (!existsSync(abs)) continue;
+    const src = readFileSync(abs, "utf8");
+    const plain = plainText(src);
+    const hay = plain.text.normalize("NFKC");
+    for (let from = 0; ; ) {
+      const head = findRun(words, hay, size, forward, from);
+      if (!head) break;
+      // The last run at or after the head, within twice the selection's length of it.
+      const tail = findRun(words, hay, size, backward.filter((k) => k >= head.k), head.at);
+      const tailEnd = tail ? tail.at + words.slice(tail.k, tail.k + size).join(" ").length : -1;
+      if (tail && tailEnd - head.at <= 2 * selection.length + 40) {
+        const start = plain.at[head.at];
+        const end = plain.at[Math.min(tailEnd - 1, plain.at.length - 1)] + 1;
+        const line = lineAt(src, start);
+        const distance = hint && hint.file === file ? Math.abs(line - hint.line) : hint ? 1e6 : 0;
+        if (!best || distance < best.distance) {
+          best = { file, start, end, startExact: head.k === 0, endExact: tail.k + size === words.length, distance };
+        }
+      }
+      from = head.at + 1;
+    }
+  }
+  return best ? { file: best.file, start: best.start, end: best.end, startExact: best.startExact, endExact: best.endExact } : null;
 }

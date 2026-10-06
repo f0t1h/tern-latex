@@ -65,6 +65,7 @@ const ui = {
   selActions: $('sel-actions'),
   selSource: $('sel-source'),
   selProofread: $('sel-proofread'),
+  selRewrite: $('sel-rewrite'),
   selAsk: $('sel-ask'),
   selDictate: $('sel-dictate'),
   selInput: $('sel-input'),
@@ -74,6 +75,14 @@ const ui = {
   dictateText: $('dictate-text'),
   dictateDone: $('dictate-done'),
   dictateCancel: $('dictate-cancel'),
+  rewritePanel: $('rewrite-panel'),
+  rewriteModel: $('rewrite-model'),
+  rewriteClose: $('rewrite-close'),
+  rewriteOriginal: $('rewrite-original'),
+  rewriteInput: $('rewrite-input'),
+  rewriteStatus: $('rewrite-status'),
+  rewriteStatusText: $('rewrite-status-text'),
+  rewriteList: $('rewrite-list'),
   docs: $('docs'),
   changesBtn: $('changes-btn'),
   changesMenu: $('changes-menu'),
@@ -121,7 +130,7 @@ const state = {
   pendingReveal: null,
   pendingPos: null, // reading position to restore at the next swap (document switch)
   lastZoomAt: 0,
-  caps: { agent: false, editor: false, popout: false, keys: null, dictation: null }, // GET /capabilities
+  caps: { agent: false, editor: false, popout: false, keys: null, dictation: null, rewrite: false }, // GET /capabilities
   sel: null, // SelInfo shown in the selection action bar
   docName: QUERY_DOC || hashParam('doc') || null, // current document; null until GET /docs (or an old server)
   docs: [], // DocEntry[] from GET /docs and SSE status events
@@ -945,7 +954,7 @@ function readSelection(s) {
 
 /** The bar maps selections through SyncTeX, which only the live PDF has. */
 function selActionsAvailable() {
-  return state.docKind === 'live' && (state.caps.editor || state.caps.agent || state.caps.proofread || Boolean(state.caps.dictation));
+  return state.docKind === 'live' && (state.caps.editor || state.caps.agent || state.caps.proofread || state.caps.rewrite || Boolean(state.caps.dictation));
 }
 
 function askOpen() {
@@ -955,6 +964,7 @@ function askOpen() {
 function updateSelButtons() {
   ui.selSource.hidden = !state.caps.editor;
   ui.selProofread.hidden = !(state.caps.agent || state.caps.proofread);
+  ui.selRewrite.hidden = !state.caps.rewrite;
   ui.selAsk.hidden = !state.caps.agent;
   ui.selDictate.hidden = !state.caps.dictation;
   ui.selDictate.disabled = selBusy || !dictationReady();
@@ -1050,7 +1060,7 @@ function onSelScroll() {
 function setSelBusy(on) {
   selBusy = on;
   ui.selBar.classList.toggle('busy', on);
-  for (const el of [ui.selSource, ui.selProofread, ui.selAsk, ui.selInput]) el.disabled = on;
+  for (const el of [ui.selSource, ui.selProofread, ui.selRewrite, ui.selAsk, ui.selInput]) el.disabled = on;
   ui.selDictate.disabled = on || !dictationReady();
   if (!on && askOpen()) ui.selInput.focus({ preventScroll: true });
 }
@@ -1094,6 +1104,185 @@ async function sendToAgent(action, instruction) {
   } finally {
     setSelBusy(false);
   }
+}
+
+// ---------------------------------------------------------------- rewrite (alternatives for a selection)
+
+/**
+ * The open Rewrite panel: the selection it is for, the server's answer (src/rewrite.ts RewriteResult), the
+ * highlighted alternative, and `gen`, bumped per request so an older answer never replaces a newer one.
+ * @type {null | { info: SelInfo, gen: number, result: any, cursor: number, busy: boolean }}
+ */
+let rw = null;
+
+function rewriteOpen() {
+  return !ui.rewritePanel.hidden;
+}
+
+function openRewrite() {
+  const info = state.sel;
+  if (!info || selBusy || !state.caps.rewrite) return;
+  rw = { info, gen: 0, result: null, cursor: 0, busy: false };
+  hideSelBar();
+  ui.rewriteInput.value = '';
+  ui.rewriteOriginal.textContent = info.text;
+  ui.rewriteModel.textContent = '';
+  ui.rewritePanel.hidden = false;
+  askRewrite();
+}
+
+function closeRewrite() {
+  rw = null;
+  ui.rewritePanel.hidden = true;
+  ui.rewriteList.replaceChildren();
+}
+
+/** Below the selection's first line, or above it when the panel would run past the visible area. */
+function anchorRewrite() {
+  const p = rw && state.pages[rw.info.page - 1];
+  if (!p) return;
+  const panel = ui.rewritePanel;
+  const below = pdfToViewer(p, rw.info.start.x, rw.info.bottom).top + 8;
+  const above = pdfToViewer(p, rw.info.start.x, rw.info.top).top - panel.offsetHeight - 8;
+  const fits = below + panel.offsetHeight <= viewer.scrollTop + viewer.clientHeight;
+  const top = fits || above < viewer.scrollTop ? below : above;
+  const left = pdfToViewer(p, rw.info.start.x, rw.info.top).left - 12;
+  const maxLeft = Math.max(8, state.container.offsetWidth - panel.offsetWidth - 8);
+  panel.style.left = `${Math.round(Math.max(8, Math.min(left, maxLeft)))}px`;
+  panel.style.top = `${Math.round(Math.max(viewer.scrollTop + 4, top))}px`;
+}
+
+/** The panel's status line: `busy` shows a spinner, `error` is red, `note` is plain; empty text hides it. */
+function rewriteStatus(text, kind = 'note') {
+  ui.rewriteStatus.hidden = !text;
+  ui.rewriteStatus.className = kind;
+  ui.rewriteStatusText.textContent = text ?? '';
+}
+
+/** `alt` as text nodes with the words `original` lacks wrapped in <ins> (a longest-common-subsequence word diff). */
+function wordDiff(original, alt) {
+  const a = original.split(/\s+/).filter(Boolean);
+  const b = alt.split(/\s+/).filter(Boolean);
+  if (a.length * b.length > 40_000) return [document.createTextNode(alt)];
+  const lcs = Array.from({ length: a.length + 1 }, () => new Uint16Array(b.length + 1));
+  for (let i = a.length - 1; i >= 0; i--) {
+    for (let j = b.length - 1; j >= 0; j--) lcs[i][j] = a[i] === b[j] ? lcs[i + 1][j + 1] + 1 : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
+  }
+  const out = [];
+  let i = 0;
+  for (let j = 0; j < b.length; ) {
+    if (i < a.length && a[i] === b[j]) {
+      out.push(document.createTextNode(`${b[j]} `));
+      i++;
+      j++;
+    } else if (i < a.length && lcs[i + 1][j] >= lcs[i][j + 1]) {
+      i++; // a word of the original the alternative drops
+    } else {
+      out.push(el('ins', '', `${b[j]} `));
+      j++;
+    }
+  }
+  return out;
+}
+
+function renderRewrite() {
+  const r = rw;
+  if (!r) return;
+  const alts = r.result?.alternatives ?? [];
+  if (r.result) {
+    ui.rewriteOriginal.textContent = r.result.text;
+    ui.rewriteModel.textContent = r.result.model ? `· ${r.result.model}` : '';
+  }
+  ui.rewriteList.replaceChildren(
+    ...alts.map((alt, i) => {
+      const li = el('li', i === r.cursor ? 'current' : '');
+      li.append(el('span', 'rw-key', String(i + 1)), el('span', 'rw-note', alt.note || ''));
+      const text = el('div', 'rw-text');
+      text.append(...wordDiff(r.result.text, alt.text));
+      li.append(text);
+      li.addEventListener('click', () => applyRewrite(i));
+      li.addEventListener('mousemove', () => {
+        if (r.cursor !== i) {
+          r.cursor = i;
+          for (const [k, item] of [...ui.rewriteList.children].entries()) item.classList.toggle('current', k === i);
+        }
+      });
+      return li;
+    }),
+  );
+  anchorRewrite();
+}
+
+async function askRewrite() {
+  const r = rw;
+  if (!r || r.busy) return;
+  const gen = ++r.gen;
+  r.result = null;
+  r.cursor = 0;
+  const instruction = ui.rewriteInput.value.trim();
+  rewriteStatus('Asking omp for alternatives…', 'busy');
+  renderRewrite();
+  const { page, start, end, text } = r.info;
+  try {
+    const res = await postJSON('/rewrite', withDoc({ page, start, end, text, ...(instruction ? { instruction } : {}) }));
+    const data = await res.json().catch(() => null);
+    if (rw !== r || gen !== r.gen) return;
+    if (!res.ok) {
+      rewriteStatus(data?.error ?? `rewrite failed (${res.status})`, 'error');
+      return;
+    }
+    r.result = data;
+    const dropped = data.rejected ? `${data.rejected} dropped: they changed commands, math or references` : '';
+    if (data.alternatives?.length) rewriteStatus(dropped);
+    else rewriteStatus(`No usable alternatives${dropped ? ` (${dropped})` : ''}; R asks again`, 'error');
+    renderRewrite();
+  } catch {
+    if (rw === r && gen === r.gen) rewriteStatus('rewrite failed: server unreachable', 'error');
+  }
+}
+
+async function applyRewrite(i) {
+  const r = rw;
+  const alt = r?.result?.alternatives?.[i];
+  if (!r || !alt || r.busy) return;
+  r.busy = true;
+  rewriteStatus('Replacing…', 'busy');
+  const { file, from, to, text } = r.result;
+  try {
+    const res = await postJSON('/rewrite/apply', withDoc({ file, from, to, text, replacement: alt.text }));
+    const data = await res.json().catch(() => null);
+    if (rw !== r) return;
+    r.busy = false;
+    if (!res.ok) {
+      rewriteStatus(data?.error ?? `replacing failed (${res.status})`, 'error');
+      return;
+    }
+    closeRewrite();
+    document.getSelection()?.removeAllRanges();
+    toast(`Rewritten in ${data.file}:${data.line}; rebuilding`);
+  } catch {
+    if (rw === r) {
+      r.busy = false;
+      rewriteStatus('replacing failed: server unreachable', 'error');
+    }
+  }
+}
+
+/** Keys while the panel is open and its input is not focused; true when handled. */
+function rewriteKey(e) {
+  const r = rw;
+  if (!r || e.metaKey || e.ctrlKey || e.altKey) return false;
+  const n = r.result?.alternatives?.length ?? 0;
+  if (e.key === 'Escape') closeRewrite();
+  else if (/^[1-9]$/.test(e.key)) applyRewrite(Number(e.key) - 1);
+  else if (e.key === 'Enter') applyRewrite(r.cursor);
+  else if ((e.key === 'ArrowDown' || e.key === 'j') && n) r.cursor = Math.min(n - 1, r.cursor + 1);
+  else if ((e.key === 'ArrowUp' || e.key === 'k') && n) r.cursor = Math.max(0, r.cursor - 1);
+  else if (e.key === 'r' || e.key === 'R') askRewrite();
+  else if (e.key === '/') ui.rewriteInput.focus({ preventScroll: true });
+  else return false;
+  if (/^(ArrowDown|ArrowUp|j|k)$/.test(e.key)) renderRewrite();
+  return true;
 }
 
 // ---------------------------------------------------------------- dictation
@@ -1420,7 +1609,7 @@ async function fetchCaps() {
         : null;
       const d = c?.dictation;
       const dictation = d && typeof d.ready === 'boolean' ? { ready: d.ready, hint: typeof d.hint === 'string' ? d.hint : '' } : null;
-      caps = { agent: c?.agent === true, editor: c?.editor === true, popout: c?.popout === true, history: c?.history === true, proofread: c?.proofread === true, keys, dictation };
+      caps = { agent: c?.agent === true, editor: c?.editor === true, popout: c?.popout === true, history: c?.history === true, proofread: c?.proofread === true, rewrite: c?.rewrite === true, keys, dictation };
       answered = true;
     }
   } catch {
@@ -1826,6 +2015,7 @@ function switchDoc(name, { page = 0, initial = false } = {}) {
   state.pendingReveal = null;
   state.bannerDismissedKey = null;
   if (state.sel) hideSelBar();
+  if (rewriteOpen()) closeRewrite();
   primeView(name, page);
   if (!initial) writeLocation(name, page);
   postJSON('/focus', { doc: name }).catch(() => {}); // build this document first from now on
@@ -2333,7 +2523,7 @@ function helpSection(title, rows) {
 /** Describes what this viewer, with this server's capabilities, actually does. */
 function renderHelp() {
   const c = state.caps;
-  const bar = [c.editor && 'Source', (c.agent || c.proofread) && 'Proofread', c.agent && 'Ask omp…', c.dictation && '🎙 Dictate'].filter(Boolean);
+  const bar = [c.editor && 'Source', (c.agent || c.proofread) && 'Proofread', c.rewrite && 'Rewrite…', c.agent && 'Ask omp…', c.dictation && '🎙 Dictate'].filter(Boolean);
   const viewerRows = [
     [`${MOD}click`, c.editor ? 'open the source of that spot in the editor' : "print that spot's source file:line in the dev terminal"],
     ['Right-click', 'actions for the selection or that spot'],
@@ -2344,6 +2534,9 @@ function renderHelp() {
   if (c.dictation) {
     const ready = c.dictation.ready ? '' : ` (first: ${c.dictation.hint || 'run `omp setup speech`'})`;
     viewerRows.push(['D', `with the bar open: 🎙 Dictate — speak, then Enter or D puts your words after the selection as a suggestion in ✎ Review; Esc cancels${ready}`]);
+  }
+  if (c.rewrite) {
+    viewerRows.push(['R', 'with the bar open: Rewrite — alternative wordings of the selection; 1–9 or a click replaces it in the source, / says how, Esc closes']);
   }
   viewerRows.push(['Esc', 'close the bar, panels and this help; cancel a dictation']);
   if (state.docs.length > 1) viewerRows.push([`${ALT}1–9  ${ALT}[  ${ALT}]`, 'switch document: by number, previous, next']);
@@ -2392,7 +2585,7 @@ function updateTip() {
     return;
   }
   const c = state.caps;
-  const actions = [(c.agent || c.proofread) && 'Proofread', c.agent && 'Ask omp', c.dictation && 'Dictate (D, speak, Enter)'].filter(Boolean);
+  const actions = [(c.agent || c.proofread) && 'Proofread', c.rewrite && 'Rewrite (R)', c.agent && 'Ask omp', c.dictation && 'Dictate (D, speak, Enter)'].filter(Boolean);
   const show = c.keys?.find((k) => k.id === 'show-in-pdf');
   ui.tipText.textContent = [
     actions.length ? `Select text for ${actions.join(' · ')}.` : '',
@@ -2535,6 +2728,7 @@ function ctxSelItems(sel) {
   const items = [];
   if (c.editor) items.push(ctxItem('', 'Source', '', ui.selSource.title, () => onSel(sel, selSource), why));
   if (c.agent || c.proofread) items.push(ctxItem('', 'Proofread', '', ui.selProofread.title, () => onSel(sel, () => sendToAgent('proofread')), why));
+  if (c.rewrite) items.push(ctxItem('', 'Rewrite…', 'R', ui.selRewrite.title, () => onSel(sel, openRewrite), why));
   if (c.agent) items.push(ctxItem('', 'Ask omp…', '', ui.selAsk.title, () => onSel(sel, openAsk), why));
   if (c.dictation) {
     const notReady = dictationReady() ? '' : ui.selDictate.title;
@@ -2685,6 +2879,11 @@ window.addEventListener('keydown', (e) => {
     }
     return;
   }
+  // The Rewrite panel's keys (its input handles its own); anything else falls through.
+  if (rewriteOpen() && e.target !== ui.rewriteInput && rewriteKey(e)) {
+    e.preventDefault();
+    return;
+  }
   if (e.key === 'Escape') {
     setHelp(false);
     setPanel(false);
@@ -2709,6 +2908,11 @@ window.addEventListener('keydown', (e) => {
     }
     if ((e.key === 'd' || e.key === 'D') && state.sel && !askOpen() && !ui.selDictate.hidden) {
       startDictation();
+      e.preventDefault();
+      return;
+    }
+    if ((e.key === 'r' || e.key === 'R') && state.sel && !askOpen() && !ui.selRewrite.hidden) {
+      openRewrite();
       e.preventDefault();
       return;
     }
@@ -2817,7 +3021,9 @@ ui.ctxMenu.addEventListener('pointermove', (e) => {
 // Selection action bar. Buttons keep the page selection (no focus change on mousedown).
 document.addEventListener('selectionchange', scheduleSelRefresh);
 viewer.addEventListener('mousedown', (e) => {
-  if (e.button !== 0 || (IS_MAC && e.ctrlKey) || ui.selBar.contains(e.target)) return;
+  // A click on the page (not in the panel) closes the Rewrite panel, like Escape.
+  if (rewriteOpen() && !ui.rewritePanel.contains(e.target)) closeRewrite();
+  if (e.button !== 0 || (IS_MAC && e.ctrlKey) || ui.selBar.contains(e.target) || ui.rewritePanel.contains(e.target)) return;
   selPointerDown = true;
   selDismissed = null;
   if (state.sel) hideSelBar();
@@ -2832,6 +3038,19 @@ ui.selBar.addEventListener('mousedown', (e) => {
 });
 ui.selSource.addEventListener('click', selSource);
 ui.selProofread.addEventListener('click', () => sendToAgent('proofread'));
+ui.selRewrite.addEventListener('click', openRewrite);
+ui.rewriteClose.addEventListener('click', closeRewrite);
+ui.rewriteInput.addEventListener('keydown', (e) => {
+  e.stopPropagation(); // keep global shortcuts (Escape, digits, zoom) out of the input
+  if (e.key === 'Enter' && !e.isComposing) {
+    e.preventDefault();
+    askRewrite();
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    if (ui.rewriteInput.value) ui.rewriteInput.value = '';
+    else closeRewrite();
+  }
+});
 ui.selAsk.addEventListener('click', openAsk);
 ui.selDictate.addEventListener('click', startDictation);
 // The pill keeps the page selection and stays out of the selection bar's pointer handling.

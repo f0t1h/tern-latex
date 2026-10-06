@@ -632,6 +632,71 @@ body.diff-mode { --top: calc(var(--bar-h) + var(--diff-h)); }
 #dictate-text.muted { color: var(--muted); }
 #dictate-done { font-weight: 600; }
 
+/* ---------- rewrite panel: alternatives for a selection (same scroll space as the bar) ---------- */
+
+#rewrite-panel {
+  position: absolute;
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(680px, calc(100% - 16px));
+  max-height: min(70vh, 640px);
+  padding: 10px 12px;
+  background: var(--panel-bg);
+  color: var(--panel-fg);
+  border: 1px solid var(--bar-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+  font-size: 13px;
+  line-height: 1.45;
+}
+#rewrite-panel .rw-head { display: flex; align-items: baseline; gap: 8px; }
+#rewrite-panel .rw-title { font-weight: 600; }
+#rewrite-model { flex: 1; font-size: 12px; }
+#rewrite-close { border: none; background: none; color: inherit; font-size: 16px; cursor: pointer; padding: 0 4px; }
+#rewrite-original {
+  max-height: 6.5em;
+  overflow: auto;
+  padding: 6px 8px;
+  border-left: 3px solid var(--bar-border);
+  opacity: 0.75;
+  white-space: pre-wrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+#rewrite-input {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid var(--bar-border);
+  border-radius: 4px;
+  padding: 4px 8px;
+  outline: none;
+}
+#rewrite-input:focus { border-color: var(--info); }
+#rewrite-status { display: flex; align-items: center; gap: 8px; font-size: 12px; opacity: 0.85; }
+#rewrite-status .spinner { display: none; }
+#rewrite-status.busy .spinner { display: inline-block; }
+#rewrite-status.error { color: var(--err); opacity: 1; }
+#rewrite-list { list-style: none; margin: 0; padding: 0; overflow: auto; display: flex; flex-direction: column; gap: 6px; }
+#rewrite-list li {
+  display: grid;
+  grid-template-columns: 1.6em 1fr;
+  column-gap: 6px;
+  padding: 7px 9px;
+  border: 1px solid var(--bar-border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+#rewrite-list li:hover { border-color: var(--info); }
+#rewrite-list li.current { border-color: var(--info); box-shadow: inset 3px 0 0 var(--info); }
+#rewrite-list .rw-key { grid-row: span 2; font-weight: 600; opacity: 0.7; }
+#rewrite-list .rw-note { font-size: 11px; opacity: 0.65; }
+#rewrite-list .rw-text { white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+#rewrite-list ins { text-decoration: none; background: color-mix(in srgb, var(--info) 22%, transparent); border-radius: 2px; }
+#rewrite-panel .rw-foot { font-size: 11px; }
+
 /* ---------- pdf.js text layer (subset of pdf_viewer.css) ---------- */
 
 .textLayer {
