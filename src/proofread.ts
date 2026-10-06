@@ -1,13 +1,11 @@
-import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { rename, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Status } from "./builder.ts";
 import { escapeLatex, PROOF_AUTHOR, texFiles } from "./changes.ts";
 import { type Config, docPaths, paths, posix, UsageError } from "./config.ts";
 import { addPending } from "./suggestions.ts";
-import { resolveTool } from "./tools.ts";
+import { type Model, taskModel } from "./models.ts";
 import { checkpoint } from "./vcs.ts";
 
 /**
@@ -111,6 +109,8 @@ export interface ProofreadOptions {
   build: () => Promise<Status[]>;
   /** Progress callback (paragraphs done, total). */
   progress?: (done: number, total: number) => void;
+  /** The model to ask; default: omp's proofread role (src/models.ts). */
+  model?: Model;
 }
 
 /** Prose paragraphs of a file: blank lines, display math, non-prose environments and the preamble separate them. */
@@ -291,32 +291,6 @@ export function applyHunks(text: string, hunks: Hunk[], direct: boolean, author:
   return out;
 }
 
-/**
- * One print-mode omp call: no tools, no session, thinking off, outside the project so no project context
- * loads. INPUT goes in on stdin; resolves with omp's reply text.
- */
-export async function askOmp(cfg: Config, model: string, systemPrompt: string, input: string): Promise<string> {
-  const [omp, ...pre] = (await resolveTool("omp", cfg)).command;
-  const args = [...pre, "-p", "--no-tools", "--no-session", "--thinking", "off", "--model", model, "--system-prompt", systemPrompt];
-  const { promise, resolve, reject } = Promise.withResolvers<string>();
-  // The input goes in on stdin: argv is visible to other users (`ps`) and capped at 32K chars on Windows.
-  const child = spawn(omp, args, { cwd: tmpdir(), stdio: ["pipe", "pipe", "pipe"] });
-  child.stdin.on("error", () => {}); // An omp that fails or exits early reports through `error`/`close`.
-  child.stdin.end(input);
-  let out = "";
-  let err = "";
-  child.stdout.on("data", (b: Buffer) => (out += b));
-  child.stderr.on("data", (b: Buffer) => (err += b));
-  const timer = setTimeout(() => child.kill("SIGTERM"), 90_000);
-  child.on("error", (e) => reject(new Error(`cannot start ${omp}: ${e.message} (set TERNLATEX_OMP to the omp executable)`)));
-  child.on("close", (code) => {
-    clearTimeout(timer);
-    if (code === 0) resolve(out);
-    else reject(new Error(`omp exited with ${code}: ${(err || out).trim().split("\n").slice(-3).join(" ")}`));
-  });
-  return promise;
-}
-
 /** The JSON array in a model reply: the whole reply, else a fenced block, else the outermost `[…]`; null when none parses. */
 export function replyArray(reply: string): unknown[] | null {
   const fenced = /```(?:json)?\s*([\s\S]*?)```/.exec(reply)?.[1];
@@ -337,10 +311,10 @@ export function replyArray(reply: string): unknown[] | null {
 export class UnreadableReply extends Error {}
 
 /** Proofreading suggestions for one paragraph. A reply without a readable list is asked once more. */
-export async function askModel(cfg: Config, paragraph: string): Promise<Suggestion[]> {
-  let parsed = replyArray(await askOmp(cfg, cfg.proofread.model, SYSTEM_PROMPT, paragraph));
+export async function askModel(model: Model, paragraph: string): Promise<Suggestion[]> {
+  let parsed = replyArray(await model.ask(SYSTEM_PROMPT, paragraph));
   // Small models now and then answer with prose or broken JSON; a second ask usually comes back clean.
-  parsed ??= replyArray(await askOmp(cfg, cfg.proofread.model, SYSTEM_PROMPT, paragraph));
+  parsed ??= replyArray(await model.ask(SYSTEM_PROMPT, paragraph));
   if (parsed === null) throw new UnreadableReply("the model's reply had no readable suggestion list");
   return parsed.flatMap((x: unknown) =>
     x && typeof x === "object" && "find" in x && "replace" in x && typeof x.find === "string" && typeof x.replace === "string"
@@ -367,6 +341,7 @@ export async function proofread(cfg: Config, targets: Target[], o: ProofreadOpti
     }
   }
 
+  const model = o.model ?? (await taskModel(cfg, "proofread"));
   const skipped: Record<string, number> = {};
   const hunks: Hunk[] = [];
   let done = 0;
@@ -379,7 +354,7 @@ export async function proofread(cfg: Config, targets: Target[], o: ProofreadOpti
       const p = work[next++];
       try {
         const spans = protectedSpans(p.text);
-        for (const s of await askModel(cfg, p.text)) {
+        for (const s of await askModel(model, p.text)) {
           const r = hunksFor(p, s, spans);
           if (typeof r === "string") skipped[r] = (skipped[r] ?? 0) + 1;
           else hunks.push(...r);

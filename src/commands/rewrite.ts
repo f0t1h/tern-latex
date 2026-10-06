@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { loadConfig, UsageError } from "../config.ts";
-import { askOmp } from "../proofread.ts";
+import { taskModel } from "../models.ts";
 import { type Position, rewrite } from "../rewrite.ts";
 
 /** `rewrite FILE:LINE:COL [--to LINE:COL] [--count N] [--instruction TEXT] [--json]`; see src/rewrite.ts. */
@@ -27,8 +27,10 @@ export async function rewriteCommand(args: string[]): Promise<number> {
   }
   const count = values.count === undefined ? cfg.rewrite.count : Number(values.count);
   if (!Number.isInteger(count) || count < 1 || count > 9) throw new UsageError(`--count must be from 1 to 9, got "${values.count}"`);
-  const result = await rewrite(cfg, { file, at: { line: Number(m[2]), col: Number(m[3]) }, to, count, instruction: values.instruction?.trim() || undefined }, (system, input) =>
-    askOmp(cfg, cfg.rewrite.model, system, input),
+  const result = await rewrite(
+    cfg,
+    { file, at: { line: Number(m[2]), col: Number(m[3]) }, to, count, instruction: values.instruction?.trim() || undefined },
+    await taskModel(cfg, "rewrite"),
   );
   if (values.json) {
     console.log(JSON.stringify(result));

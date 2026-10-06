@@ -1511,7 +1511,6 @@ type RewriteState = {
 	col: number,
 	to_line: number?,
 	to_col: number?,
-	model: string,
 	-- Bumped per request; answers to older ones are dropped.
 	gen: number,
 	loading: boolean,
@@ -1525,29 +1524,6 @@ type RewriteState = {
 	typing: boolean,
 	draft: string,
 }
-
--- The model `ternlatex rewrite` asks: `[rewrite] model`, else
--- `[proofread] model` in ternlatex.toml.
-local function rewrite_model(dir: string): string?
-	local ok, text = pcall(tern.fs.read, common.join(dir, "ternlatex.toml"), 256 * 1024)
-	if not ok then
-		return nil
-	end
-	local section = ""
-	local models: { [string]: string } = {}
-	for line in string.gmatch(text, "[^\r\n]+") do
-		local name = string.match(line, "^%s*%[%s*([%w_%.%-]+)%s*%]")
-		if name then
-			section = name
-		else
-			local model = string.match(line, "^%s*model%s*=%s*[\"']([^\"']+)[\"']")
-			if model and models[section] == nil then
-				models[section] = model
-			end
-		end
-	end
-	return models.rewrite or models.proofread
-end
 
 local function spot(v: any): Spot?
 	if type(v) == "table" and type(v.line) == "number" and type(v.col) == "number" then
@@ -1707,7 +1683,7 @@ local function rewrite_main(state: RewriteState): { Node }
 		table.insert(main, ui.text({ ui.span("/ " .. state.instruction :: string, "muted") }))
 	end
 	if state.loading then
-		table.insert(main, ui.progress(nil, "Asking " .. state.model .. "…"))
+		table.insert(main, ui.progress(nil, "Asking omp's rewrite model…"))
 		return main
 	end
 	if state.problem then
@@ -1752,7 +1728,6 @@ tern.block.define("rewrite", {
 			col = tonumber(args[4]) or 1,
 			to_line = tonumber(args[5] or ""),
 			to_col = tonumber(args[6] or ""),
-			model = rewrite_model(dir) or "omp",
 			gen = 0,
 			loading = false,
 			problem = nil,

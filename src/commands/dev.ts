@@ -7,7 +7,8 @@ import { projectHooks } from "../hooks.ts";
 import { buildDiff } from "../latexdiff.ts";
 import { listCheckpoints } from "../vcs.ts";
 import { resolveReview, reviewList } from "../suggestions.ts";
-import { askOmp, formatHunk, proofread } from "../proofread.ts";
+import { formatHunk, proofread } from "../proofread.ts";
+import { taskModel } from "../models.ts";
 import { rewrite } from "../rewrite.ts";
 import { formatDiagnostic } from "../diagnostics.ts";
 import { startServer } from "../server.ts";
@@ -75,7 +76,7 @@ export async function dev(target: string, o: DevOptions): Promise<number> {
       const r = await proofread(cfg, [target], { direct: false, build: () => builder.request() });
       return { suggestions: r.hunks.length, paragraphs: r.paragraphs, skipped: r.skipped, reverted: r.reverted, pending: r.pending, lines: r.hunks.map(formatHunk) };
     },
-    rewrite: (req) => rewrite(cfg, req, (system, input) => askOmp(cfg, cfg.rewrite.model, system, input)),
+    rewrite: async (req) => rewrite(cfg, req, await taskModel(cfg, "rewrite")),
     restart: () => stop("restart"),
     stop: () => stop("stop"),
   });

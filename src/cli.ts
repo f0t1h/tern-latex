@@ -12,6 +12,7 @@ import { history } from "./commands/history.ts";
 import { importProject } from "./commands/import.ts";
 import { init } from "./commands/init.ts";
 import { installCli } from "./commands/install-cli.ts";
+import { models } from "./commands/models.ts";
 import { outlineCommand } from "./commands/outline.ts";
 import { peek } from "./commands/peek.ts";
 import { refs } from "./commands/refs.ts";
@@ -57,6 +58,7 @@ writing
   restart [DIR]           restart it in its own block as a fresh process, on the same port, picking up a
                           rebuilt ternlatex and ternlatex.toml changes
   docs                    list the project's documents and their last build
+  models                  which model each task uses: omp roles latex (the omp block), proofread, rewrite
   build [DIR] [--doc NAME] [--all] [--force]
                           build every document (or one), through the running dev server if any;
                           prints diagnostics, exits 1 on errors; --all includes info-level messages.
@@ -73,11 +75,11 @@ writing
                           <outdir>/peek/<doc>.png and print its path
   fix [--doc NAME]        send the last build's errors and warnings to omp (needs a running dev)
   proofread [FILE[:FROM-TO]...] [--doc NAME] [--direct]
-                          proofread prose paragraphs with omp (no tools, thinking off, [proofread] model);
+                          proofread prose paragraphs with omp (no tools, thinking off, omp's proofread role);
                           suggestions land as \\replaced[id=proof]{…}{…} tracked changes to accept
   rewrite FILE:LINE:COL [--to LINE:COL] [--count N] [--instruction TEXT] [--json]
                           alternatives for the sentence at LINE:COL (or the range up to --to) from omp
-                          ([rewrite] model); prints them, never writes files
+                          (omp's rewrite role); prints them, never writes files
   lint [FILE...]          chktex diagnostics (default: every .tex file in the project)
   agent [DIR] [--path P]  start omp in the project with ternlatex's omp extension (project rules, skills,
                           latex_build/latex_snapshot/latex_show tools), continuing its latest omp session
@@ -158,6 +160,10 @@ async function main(argv: string[]): Promise<number> {
     case "docs": {
       parseArgs({ args: rest, allowPositionals: false, options: {} });
       return docs();
+    }
+    case "models": {
+      parseArgs({ args: rest, allowPositionals: false, options: {} });
+      return models();
     }
     case "build": {
       const { values, positionals } = parseArgs({ args: rest, allowPositionals: true, options: { all: { type: "boolean", default: false }, doc: { type: "string" }, force: { type: "boolean", default: false } } });

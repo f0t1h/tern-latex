@@ -5,6 +5,7 @@ import { delimiter, join } from "node:path";
 import { version } from "../../package.json";
 import { copyAssets, listAssets } from "../assets.ts";
 import { loadConfig } from "../config.ts";
+import { assistantModel } from "../models.ts";
 import { COMPILED, cacheDir, resolveTool, selfCommand, which } from "../tools.ts";
 
 export interface AgentOptions {
@@ -50,9 +51,9 @@ export async function removeProjectKit(dir: string): Promise<string[]> {
 }
 
 /**
- * Runs omp in the project with ternlatex's extension (`-e`) and a `ternlatex` launcher for this very ternlatex first
- * on PATH (the extension's tools run it). It continues the project's most recent omp session (a fresh one when there
- * is none), so reopening the omp block keeps context.
+ * Runs omp in the project with ternlatex's extension (`-e`), omp's `latex` role as its model when defined (else omp's
+ * default), and a `ternlatex` launcher for this very ternlatex first on PATH (the extension's tools run it). It continues
+ * the project's most recent omp session (a fresh one when there is none), so reopening the omp block keeps context.
  */
 export async function runAgent(target: string, o: AgentOptions = {}): Promise<number> {
   const cfg = loadConfig(target);
@@ -63,8 +64,9 @@ export async function runAgent(target: string, o: AgentOptions = {}): Promise<nu
   await writeLaunchers(bin);
   process.env.PATH = [bin, process.env.PATH].filter(Boolean).join(delimiter);
   const extension = await ompExtension();
+  const model = await assistantModel(cfg.dir, cfg);
   const [omp, ...pre] = (await resolveTool("omp", cfg)).command;
-  const child = spawn(omp, [...pre, "--continue", "-e", extension], { cwd: cfg.dir, stdio: "inherit", env: process.env });
+  const child = spawn(omp, [...pre, "--continue", ...(model ? ["--model", model] : []), "-e", extension], { cwd: cfg.dir, stdio: "inherit", env: process.env });
   const { promise, resolve: done } = Promise.withResolvers<number>();
   child.on("error", (e) => {
     console.error(`ternlatex: cannot start ${omp}: ${e.message} (set TERNLATEX_OMP to the omp executable)`);

@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, test } from "bun:test";
 import { loadConfig } from "../src/config.ts";
-import { type Ask, offsetOf, positionOf, rewrite, sentenceAt, validAlternatives } from "../src/rewrite.ts";
+import type { Model } from "../src/models.ts";
+import { offsetOf, positionOf, rewrite, sentenceAt, validAlternatives } from "../src/rewrite.ts";
 
 const PARA = `We follow Smith et al. in using $x = 1.5$. The method, e.g. the one in Fig.~\\ref{fig:a}, is fast
 \\citep{knuth1984}. Results vary! % a comment. Not a sentence
@@ -54,40 +55,47 @@ test("alternatives must keep the protected spans and structure; no-ops and malfo
 
 const dir = mkdtempSync(join(tmpdir(), "ternlatex-rewrite-"));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
-writeFileSync(join(dir, "ternlatex.toml"), `root = "main.tex"\n[proofread]\nmodel = "@p"\n[rewrite]\ncount = 2\n`);
+writeFileSync(join(dir, "ternlatex.toml"), `root = "main.tex"\n[rewrite]\ncount = 2\n`);
 writeFileSync(join(dir, "main.tex"), `\\documentclass{article}\n\\begin{document}\nFirst one. Ünïcode sentence\nspans two lines. Last.\n\\end{document}\n`);
+
+/** A model that answers every call with REPLY (and keeps the last input). */
+function stub(reply: string): Model & { seen: string } {
+  const m = {
+    name: "@stub",
+    seen: "",
+    ask: async (_system: string, input: string) => {
+      m.seen = input;
+      return reply;
+    },
+  };
+  return m;
+}
 
 test("rewrite targets the sentence at the caret and reports its exact range and alternatives", async () => {
   const cfg = loadConfig(dir);
-  assert.equal(cfg.rewrite.model, "@p");
-  let seen = "";
-  const ask: Ask = async (_system, input) => {
-    seen = input;
-    return JSON.stringify([{ text: "A Ünïcode sentence\nacross two lines.", note: "clearer" }]);
-  };
-  const r = await rewrite(cfg, { file: join(dir, "main.tex"), at: { line: 4, col: 3 }, count: cfg.rewrite.count, instruction: "be brief" }, ask);
+  const model = stub(JSON.stringify([{ text: "A Ünïcode sentence\nacross two lines.", note: "clearer" }]));
+  const r = await rewrite(cfg, { file: join(dir, "main.tex"), at: { line: 4, col: 3 }, count: cfg.rewrite.count, instruction: "be brief" }, model);
   assert.deepEqual(r, {
     file: "main.tex",
     from: { line: 3, col: 12 },
     to: { line: 4, col: 17 },
     text: "Ünïcode sentence\nspans two lines.",
-    model: "@p",
+    model: "@stub",
     alternatives: [{ text: "A Ünïcode sentence\nacross two lines.", note: "clearer" }],
     rejected: 0,
   });
-  assert.match(seen, /Number of alternatives: 2/);
-  assert.match(seen, /be brief/);
+  assert.match(model.seen, /Number of alternatives: 2/);
+  assert.match(model.seen, /be brief/);
 });
 
 test("rewrite with --to uses the selection verbatim, whitespace included", async () => {
   const cfg = loadConfig(dir);
-  const ask: Ask = async () => JSON.stringify([{ text: "Initial one.", note: "x" }]);
-  const r = await rewrite(cfg, { file: join(dir, "main.tex"), at: { line: 3, col: 1 }, to: { line: 3, col: 12 }, count: 4 }, ask);
+  const r = await rewrite(cfg, { file: join(dir, "main.tex"), at: { line: 3, col: 1 }, to: { line: 3, col: 12 }, count: 4 }, stub(JSON.stringify([{ text: "Initial one.", note: "x" }])));
   assert.equal(r.text, "First one. ");
   assert.deepEqual(r.alternatives, [{ text: "Initial one. ", note: "x" }]);
 });
 
 test("a caret outside prose is an error", async () => {
   const cfg = loadConfig(dir);
-  await assert.rejects(rewrite(cfg, { file: join(dir, "main.tex"), at: { line: 1, col: 1 }, count: 4 }, async () => "[]"), /not in a prose paragraph/);
+  await assert.rejects(rewrite(cfg, { file: join(dir, "main.tex"), at: { line: 1, col: 1 }, count: 4 }, stub("[]")), /not in a prose paragraph/);
 });

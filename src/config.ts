@@ -93,7 +93,7 @@ export function loadConfig(start = process.cwd()): Config {
     zotero: zoteroConfig(raw.zotero),
     review: reviewConfig(raw.review),
     proofread: proofreadConfig(raw.proofread),
-    rewrite: rewriteConfig(raw.rewrite, raw.proofread),
+    rewrite: rewriteConfig(raw.rewrite),
     tools: Object.fromEntries(Object.entries(table(raw.tools)).flatMap(([k, v]) => (typeof v === "string" && v ? [[k, v]] : []))),
     checkpoints: raw.checkpoints !== false,
   };
@@ -161,12 +161,12 @@ export function renderConfig(roots: string[]): string {
     `authors = []          # e.g. [{ id = "AK", name = "Ana K", color = "orange" }]`,
     `final = false         # true: typeset with all changes accepted and no markup`,
     ``,
+    `# Models are omp roles, set per person in omp's config (not here, so collaborators keep their own):`,
+    `# "latex" for the omp block, "proofread" and "rewrite"; \`ternlatex models\` shows what each uses.`,
     `[proofread]           # \`ternlatex proofread\`: one omp call per paragraph, thinking off, no tools`,
-    `model = "@smol"       # any omp model selector or role (e.g. "@proofread" defined in omp's config)`,
     `parallel = 4`,
     ``,
     `[rewrite]             # Tern's "Rewrite sentence" / \`ternlatex rewrite\`: alternatives for one sentence`,
-    `# model = "@smol"     # default: the [proofread] model`,
     `count = 4             # alternatives per request (1–9)`,
   ];
   return lines.join("\n") + "\n";
@@ -235,8 +235,6 @@ function zoteroConfig(v: unknown): ZoteroConfig {
 }
 
 export interface ProofreadConfig {
-  /** omp model selector or role; thinking is always off. */
-  model: string;
   /** Concurrent omp calls. */
   parallel: number;
 }
@@ -244,20 +242,18 @@ export interface ProofreadConfig {
 function proofreadConfig(v: unknown): ProofreadConfig {
   const t = table(v);
   const parallel = typeof t.parallel === "number" && Number.isInteger(t.parallel) && t.parallel > 0 ? t.parallel : 4;
-  return { model: str(t.model, "@smol"), parallel: Math.min(parallel, 16) };
+  return { parallel: Math.min(parallel, 16) };
 }
 
 export interface RewriteConfig {
-  /** omp model selector or role; default: the [proofread] model. */
-  model: string;
   /** Alternatives per request. */
   count: number;
 }
 
-function rewriteConfig(v: unknown, proofread: unknown): RewriteConfig {
+function rewriteConfig(v: unknown): RewriteConfig {
   const t = table(v);
   const count = typeof t.count === "number" && Number.isInteger(t.count) && t.count > 0 ? Math.min(t.count, 9) : 4;
-  return { model: str(t.model, proofreadConfig(proofread).model), count };
+  return { count };
 }
 
 function reviewConfig(v: unknown): ReviewConfig {

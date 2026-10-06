@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { relative } from "node:path";
 import { type Config, posix, UsageError } from "./config.ts";
+import type { Model } from "./models.ts";
 import { type Paragraph, paragraphs, protectedSpans } from "./proofread.ts";
 
 /**
@@ -43,9 +44,6 @@ export interface RewriteResult {
   /** Alternatives dropped because they changed protected LaTeX or structure, or were malformed. */
   rejected: number;
 }
-
-/** One model call: system prompt and input in, reply text out (omp in production, a stub in tests). */
-export type Ask = (systemPrompt: string, input: string) => Promise<string>;
 
 const SYSTEM_PROMPT = `You rewrite one passage of LaTeX source in several different ways.
 Reply with ONLY a JSON array, no prose: [{"text": "<rewritten passage>", "note": "<1-4 words naming the approach>"}].
@@ -211,8 +209,8 @@ export function validAlternatives(original: string, reply: string): { alternativ
   return { alternatives, rejected };
 }
 
-/** Rewrites the target range of REQ with ASK; never writes files. */
-export async function rewrite(cfg: Config, req: RewriteRequest, ask: Ask): Promise<RewriteResult> {
+/** Rewrites the target range of REQ with MODEL; never writes files. */
+export async function rewrite(cfg: Config, req: RewriteRequest, model: Model): Promise<RewriteResult> {
   const source = readFileSync(req.file, "utf8");
   const rel = posix(relative(cfg.dir, req.file));
   const at = offsetOf(source, req.at);
@@ -239,13 +237,13 @@ export async function rewrite(cfg: Config, req: RewriteRequest, ask: Ask): Promi
     `Number of alternatives: ${req.count}`,
     ...(req.instruction ? [`Instruction for every alternative: ${req.instruction}`] : []),
   ].join("\n");
-  const { alternatives, rejected } = validAlternatives(text, await ask(SYSTEM_PROMPT, input));
+  const { alternatives, rejected } = validAlternatives(text, await model.ask(SYSTEM_PROMPT, input));
   return {
     file: rel,
     from: positionOf(source, start),
     to: positionOf(source, end),
     text,
-    model: cfg.rewrite.model,
+    model: model.name,
     alternatives: alternatives.slice(0, req.count),
     rejected,
   };

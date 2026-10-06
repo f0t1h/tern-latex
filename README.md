@@ -198,7 +198,7 @@ with Bun, or the one you ran yourself.
 
 `ternlatex proofread FILE[:FROM-TO]…` proofreads prose. So do `--doc NAME` and the viewer's **Proofread**
 button. Each paragraph goes to omp with no tools and thinking off, four at a time, in about 2–3 seconds
-each; the `[proofread]` settings choose the model. ternlatex keeps only edits to prose, never to
+each, using omp's `proofread` role (see [Models](#models)). ternlatex keeps only edits to prose, never to
 commands, math, keys, labels or comments, and writes them as tracked suggestions:
 
 ```latex
@@ -352,6 +352,7 @@ Run commands anywhere inside a project (a folder with `ternlatex.toml`), or pass
 | `dev [DIR] [--port N] [--no-tern] [--open]` | watches, rebuilds on save and serves the viewer; lays out Tern blocks |
 | `stop [DIR]` / `restart [DIR]` | stops or restarts the running dev server |
 | `docs` | lists the project's documents and their last build |
+| `models` | shows which model each task uses (omp roles `latex`, `proofread`, `rewrite`) |
 | `build [DIR] [--doc NAME] [--all] [--force]` | builds through the running dev server if any; prints `file:line: severity: message`, exits 1 on errors; `--all` adds info messages |
 | `snapshot (--page N \| FILE:LINE) [--doc NAME] [--dpi N] [--out PNG]` | renders one PDF page to PNG (default `build/snapshots/<doc>-page-N.png`) |
 | `show FILE:LINE [--doc NAME]` | scrolls the viewer to a source line and highlights it |
@@ -405,13 +406,36 @@ authors = []
 final = false
 
 [proofread]
-model = "@smol"          # omp model selector or role; thinking is always off
 parallel = 4             # paragraphs at a time (up to 16)
 
 [rewrite]
-# model = "@smol"        # default: the [proofread] model
 count = 4                # alternatives per request (1–9)
 ```
+
+### Models
+
+ternlatex has no model settings of its own: each task uses an omp role, so you choose models where your
+providers already are, and a project shared through git names no provider. A role you haven't defined
+falls back to the next one:
+
+| Task | omp roles, first defined wins |
+|---|---|
+| the omp block (writing assistant) | `latex`, else omp's default model |
+| proofreading | `proofread`, else `smol` |
+| rewrite alternatives (editor and PDF) | `rewrite`, else `proofread`, else `smol` |
+
+Define them under `modelRoles` in omp's `config.yml` (`omp config path` prints its folder):
+
+```yaml
+modelRoles:
+  latex: anthropic/claude-opus-4-5
+  proofread: openai/gpt-5-mini
+```
+
+`ternlatex models` shows what each task uses now. Proofreading and rewrites pick a change up within 30
+seconds; reopen the omp block for its model. A project's own `.omp/config.yml` roles count for its omp
+block only. Older projects' `ternlatex.toml` may still have `model = …` under `[proofread]`; it is no
+longer read.
 
 ### Environment variables
 
