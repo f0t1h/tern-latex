@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>ternlatex</title>
+  <link rel="stylesheet" href="/viewer/viewer.css">
+  <script type="module" src="/viewer/viewer.js"></script>
+</head>
+<body>
+  <header id="toolbar">
+    <nav id="docs" hidden role="tablist" aria-label="Documents"></nav>
+    <div id="build-state" class="state-idle" title="Build state">
+      <span class="spinner" aria-hidden="true"></span>
+      <span id="build-label">Connecting…</span>
+    </div>
+    <button id="rebuild" type="button" title="Rebuild now">↻</button>
+    <button id="err-count" class="count errors" type="button" hidden title="Show diagnostics">0 errors</button>
+    <button id="warn-count" class="count warnings" type="button" hidden title="Show diagnostics">0 warnings</button>
+    <span id="conn" hidden title="Lost connection to the ternlatex server; reconnecting">disconnected</span>
+    <span class="spacer"></span>
+    <div id="changes-wrap">
+      <button id="changes-btn" class="tool" type="button" hidden aria-haspopup="menu" aria-expanded="false" aria-pressed="false"
+        title="Show changes as a redline PDF (latexdiff) since the last commit or a checkpoint"><span class="spinner" aria-hidden="true"></span><span class="glyph" aria-hidden="true">±</span> Changes</button>
+      <div id="changes-menu" role="menu" hidden>
+        <button id="changes-live" type="button" role="menuitem" hidden>Back to live PDF</button>
+        <button id="changes-head" type="button" role="menuitem" title="Uncommitted changes (latexdiff HEAD vs working tree)">Since last commit</button>
+        <div class="menu-sep" role="separator"></div>
+        <div id="changes-checkpoints" class="menu-group" aria-label="Checkpoints"></div>
+        <div class="menu-sep" role="separator"></div>
+        <button id="changes-custom" type="button" role="menuitem" title="Any git revision: a sha, tag, branch or HEAD~3">Custom rev…</button>
+        <input id="changes-rev" type="text" hidden autocomplete="off" spellcheck="false"
+          placeholder="sha, tag, branch, HEAD~3…" title="Enter shows changes since this revision, Escape cancels">
+      </div>
+    </div>
+    <button id="review-btn" class="tool" type="button" hidden aria-pressed="false"
+      title="Tracked changes and comments (LaTeX changes package)"><span class="glyph" aria-hidden="true">✎</span> Review <span id="review-count">(0)</span></button>
+    <a id="download" href="/pdf?download=1" download="document.pdf" hidden title="Download PDF">⤓</a>
+    <span id="page-info" title="Current page / total pages">– / –</span>
+    <div id="zoom" role="group" aria-label="Zoom">
+      <button id="zoom-out" type="button" title="Zoom out (⌘−)">−</button>
+      <button id="zoom-label" type="button" title="Fit width (⌘0)">100%</button>
+      <button id="zoom-in" type="button" title="Zoom in (⌘+)">+</button>
+    </div>
+    <button id="help-btn" type="button" aria-haspopup="dialog" aria-expanded="false" title="Keys and gestures (?)">?</button>
+  </header>
+
+  <div id="diff-bar" hidden role="status">
+    <span class="spinner" aria-hidden="true"></span>
+    <span id="diff-label">Changes since last commit</span>
+    <span class="diff-sep">—</span>
+    <button id="diff-back" type="button" title="Leave the redline and show the live PDF">Back to live</button>
+  </div>
+
+  <div id="banner" hidden role="alert">
+    <div class="banner-head">
+      <strong>Build failed — showing last good PDF</strong>
+      <button id="banner-close" type="button" title="Dismiss">×</button>
+    </div>
+    <ul id="banner-list" class="diag-list"></ul>
+  </div>
+
+  <div id="tip" hidden role="note">
+    <span id="tip-text"></span>
+    <button id="tip-close" type="button" title="Got it — don't show this tip again">×</button>
+  </div>
+
+  <div id="help" hidden role="dialog" aria-label="Keys and gestures"></div>
+  <div id="ctx-menu" hidden role="menu" tabindex="-1" aria-label="Actions"></div>
+
+  <aside id="diag-panel" hidden>
+    <div class="panel-head">
+      <strong>Diagnostics</strong>
+      <button id="diag-close" type="button" title="Close">×</button>
+    </div>
+    <ul id="diag-list" class="diag-list"></ul>
+  </aside>
+
+  <aside id="review-panel" hidden>
+    <div class="panel-head">
+      <strong>Review</strong>
+      <select id="review-filter" title="Show the changes of one author">
+        <option value="">All authors</option>
+      </select>
+      <span class="spacer"></span>
+      <button id="review-close" type="button" title="Close">×</button>
+    </div>
+    <ul id="review-authors"></ul>
+    <div id="review-empty" hidden>No tracked changes or comments.<br>
+      <span class="muted">Mark edits with <code>\added</code>, <code>\deleted</code>, <code>\replaced</code> or <code>\comment</code>.</span></div>
+    <ul id="review-list"></ul>
+  </aside>
+
+  <main id="viewer">
+    <div id="pages" class="pages"></div>
+    <div id="sel-bar" hidden>
+      <div id="sel-actions" role="group" aria-label="Selection actions">
+        <button id="sel-source" type="button" title="Show the source of this passage in the editor (⌘-click does this for any spot)">Source</button>
+        <button id="sel-proofread" type="button" title="Fix typos, grammar and punctuation in the source of this passage; suggestions land in ✎ Review">Proofread</button>
+        <button id="sel-ask" type="button" title="Tell omp what to do with this passage (type an instruction, Enter sends)">Ask omp…</button>
+        <button id="sel-dictate" type="button" hidden title="Speak text to go after this passage; it lands as a suggestion in ✎ Review (key D)">🎙 Dictate</button>
+      </div>
+      <input id="sel-input" type="text" hidden autocomplete="off" spellcheck="false"
+        placeholder="Tell omp what to do with this passage" title="Enter sends to omp, Escape cancels">
+    </div>
+    <div id="dictate-pill" hidden role="group" aria-label="Dictation">
+      <span class="rec-dot" aria-hidden="true"></span>
+      <span class="spinner" aria-hidden="true"></span>
+      <span id="dictate-time">0:00</span>
+      <span id="dictate-level" aria-hidden="true"></span>
+      <span id="dictate-text" class="muted" aria-live="polite">Listening…</span>
+      <button id="dictate-done" type="button" title="Put what you said after the selection, as a suggestion (Enter or D)">Done</button>
+      <button id="dictate-cancel" type="button" title="Discard the recording (Esc)">Cancel</button>
+    </div>
+  </main>
+
+  <div id="empty">
+    <div class="empty-inner">
+      <div id="empty-title"><span class="spinner" aria-hidden="true"></span> Waiting for the first build…</div>
+      <ul id="empty-list" class="diag-list"></ul>
+    </div>
+  </div>
+
+  <div id="toast" hidden role="status"></div>
+</body>
+</html>

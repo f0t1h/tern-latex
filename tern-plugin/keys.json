@@ -1,0 +1,7 @@
+{ "commands": [
+  { "id": "show-in-pdf", "key": "j", "title": "Show in PDF", "hint": "PDF spot of the caret's line" },
+  { "id": "outline", "key": "o", "title": "Outline", "hint": "sections, figures, labels, problems" },
+  { "id": "cite", "key": "b", "title": "Insert citation", "hint": "search .bib and Zotero, insert at the caret" },
+  { "id": "rewrite", "key": "r", "title": "Rewrite sentence", "hint": "alternatives for the sentence at the caret" },
+  { "id": "peek", "key": "v", "title": "Toggle PDF peek", "hint": "PDF around the caret, following it" }
+] }

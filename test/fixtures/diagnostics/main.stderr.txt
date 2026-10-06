@@ -1,0 +1,11 @@
+note: "version 2" Tectonic command-line interface activated
+note: Running TeX ...
+note: Rerunning TeX because "main.aux" changed ...
+note: Running xdvipdfmx ...
+note: Writing `build/main.pdf` (5.0849609375 KiB)
+note: Writing `build/main.synctex.gz` (580 B)
+note: Writing `build/main.log` (2.2626953125 KiB)
+note: Skipped writing 1 intermediate files (use --keep-intermediates to keep them)
+warning: main.tex:6: Overfull \hbox (76.66pt too wide) detected at line 6
+warning: main.tex:6: Overfull \hbox (76.66pt too wide) detected at line 6
+warning: warnings were issued by the TeX engine; use --print and/or --keep-logs for details.

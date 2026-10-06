@@ -1,0 +1,38 @@
+schema = 1
+id = "ternlatex"
+name = "ternlatex"
+version = "0.1.0"
+description = "Live LaTeX → PDF with omp: project layout, build status, errors, forward search, review."
+host = "tern-plugin/host.luau"
+window = "tern-plugin/window.luau"
+
+[[blocks]]
+id = "review"
+title = "Review"
+palette = false
+files = ["*.tex"]
+
+[[blocks]]
+id = "outline"
+title = "Outline"
+palette = false
+files = ["*.tex"]
+
+[[blocks]]
+id = "cite"
+title = "Insert citation"
+palette = false
+
+[[blocks]]
+id = "rewrite"
+title = "Rewrite sentence"
+palette = false
+
+[[blocks]]
+id = "peek"
+title = "PDF peek"
+palette = false
+
+[[lenses]]
+id = "build"
+match = ["ternlatex build", "ternlatex build *", "ternlatex lint", "ternlatex lint *"]

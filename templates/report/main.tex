@@ -1,0 +1,24 @@
+\documentclass[11pt]{report}
+\usepackage{style/ternlatex}
+
+\title{Annual Infrastructure Report}
+\author{Platform Team}
+\date{\today}
+
+\begin{document}
+% Distinct numbering per part keeps PDF page anchors unique.
+\pagenumbering{alph}
+\maketitle
+\pagenumbering{roman}
+\tableofcontents
+\cleardoublepage
+\pagenumbering{arabic}
+
+\include{sections/introduction}
+\include{sections/operations}
+\include{sections/outlook}
+
+\bibliographystyle{plainnat}
+\bibliography{refs}
+
+\end{document}

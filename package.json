@@ -1,0 +1,36 @@
+{
+  "name": "ternlatex",
+  "version": "0.1.0",
+  "description": "Live LaTeX → PDF editing inside Tern, with omp as the writing assistant",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/f0t1h/tern-latex.git"
+  },
+  "homepage": "https://github.com/f0t1h/tern-latex",
+  "bin": {
+    "ternlatex": "src/cli.ts"
+  },
+  "packageManager": "bun@1.4.2",
+  "engines": {
+    "bun": ">=1.4.2"
+  },
+  "scripts": {
+    "ternlatex": "bun src/cli.ts",
+    "check": "tsc -p .",
+    "test": "bun test",
+    "build": "bun scripts/build.ts"
+  },
+  "dependencies": {
+    "@napi-rs/canvas": "1.0.10",
+    "fflate": "0.8.3",
+    "pdfjs-dist": "6.4.299",
+    "smol-toml": "1.9.0"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.2",
+    "typescript": "5.9.3"
+  }
+}

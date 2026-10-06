@@ -1,0 +1,9 @@
+# LF everywhere: fixtures are compared byte-for-byte, and Git for Windows defaults to autocrlf.
+* text=auto eol=lf
+*.pdf binary
+*.gz binary
+*.png binary
+*.tar binary
+*.tar.* binary
+*.tgz binary
+*.zip binary

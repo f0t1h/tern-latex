@@ -1,0 +1,17 @@
+\documentclass{article}
+\usepackage{natbib}
+\begin{document}
+\Citet{knuth1984} designed \TeX{} \citep[see][p.~3]{kew2008, lamport1994}.
+\citep*{a:b-c_2020}\citealp{x.y} and \citeauthor{smith2020} (\citeyear{smith2020}).
+% \cite{commented_out}
+Fifty percent\% \cite{after_escaped_percent} % \citet{trailing_comment}
+\parencite[12]{biblatex1} \textcite{biblatex2} \autocite[cf.][]{biblatex3}
+\cites(See)(and more)[12]{multi1}[pre][post]{multi2}{multi3} next {not_a_key}
+\nocite{*}\nocite{extra_entry}
+\cite
+  {spread_over_lines}
+\citestyle{plainnat}
+\citep[see {Section~2}][]{nested_opt}
+\bibliographystyle{plainnat}
+\bibliography{refs}
+\end{document}

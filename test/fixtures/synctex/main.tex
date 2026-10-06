@@ -1,0 +1,28 @@
+\documentclass{article}
+\usepackage{amsmath}
+\begin{document}
+\section{Introduction}
+Alpha bravo charlie delta.
+This paragraph is deliberately long so that it spans several lines of
+output text in the typeset document, which lets us check that reverse
+lookup finds the correct source line even when a paragraph wraps
+across multiple lines in the final rendering of the page here.
+
+\input{sub}
+
+\begin{tabular}{|l|r|}
+\hline
+Name & Value \\
+Zebra & 42 \\
+\hline
+\end{tabular}
+
+\begin{equation}
+E = mc^2 + \int_0^1 f(x)\,dx
+\end{equation}
+
+\newpage
+Pagetwo begins here with Quokka.
+
+Second paragraph on page two mentions Narwhal.
+\end{document}

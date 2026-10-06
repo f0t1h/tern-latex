@@ -1,0 +1,15 @@
+\begin{table}[htbp]
+  \centering
+  \caption{Median rebuild latency by document size.}
+  \label{tab:latency}
+  \begin{tabular}{l S[table-format=3.0] S[table-format=1.2] S[table-format=2.1]}
+    \toprule
+    {Document} & {Pages} & {Latency (\si{\second})} & {Size (\si{\mega\byte})} \\
+    \midrule
+    Letter     &   1 & 0.41 &  0.1 \\
+    Article    &   8 & 0.86 &  0.4 \\
+    Report     &  64 & 2.35 &  3.2 \\
+    Thesis     & 212 & 7.90 & 11.8 \\
+    \bottomrule
+  \end{tabular}
+\end{table}

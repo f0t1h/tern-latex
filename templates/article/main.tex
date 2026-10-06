@@ -1,0 +1,24 @@
+\documentclass[11pt]{article}
+\usepackage{style/ternlatex}
+\usepackage{tikz}
+\usetikzlibrary{positioning}
+
+\title{Measuring Build Latency in Live \LaTeX{} Editing}
+\author{Ada Example \\ \small Example University}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+We measure how quickly a live editing loop turns a saved source file into an updated PDF.
+Incremental rebuilds with a warm package cache stay well below one second for short documents.
+\end{abstract}
+
+\input{sections/introduction}
+\input{sections/results}
+
+\bibliographystyle{plainnat}
+\bibliography{refs}
+
+\end{document}

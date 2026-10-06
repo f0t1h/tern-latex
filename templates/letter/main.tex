@@ -1,0 +1,27 @@
+\documentclass[11pt]{letter}
+\usepackage{style/ternlatex}
+
+\signature{Ada Example}
+\address{Ada Example \\ 12 Sample Street \\ 10115 Berlin}
+\date{\today}
+
+\begin{document}
+
+\begin{letter}{Dr Jane Recipient \\ Editorial Office \\ Example Journal \\ 1 Journal Road \\ London}
+
+\opening{Dear Dr Recipient,}
+
+Please find enclosed our manuscript \emph{Measuring Build Latency in Live \LaTeX{} Editing}, which we submit for consideration as a research article.
+
+The manuscript reports rebuild times of under \SI{1}{\second} for short documents and explains how a warm package cache makes this possible.
+It has not been published elsewhere and is not under review at another journal.
+
+We would be glad to suggest reviewers if that is helpful.
+
+\closing{Yours sincerely,}
+
+\encl{Manuscript, cover figure}
+
+\end{letter}
+
+\end{document}

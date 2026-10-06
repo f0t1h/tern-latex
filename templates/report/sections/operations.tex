@@ -1,0 +1,28 @@
+\chapter{Operations}
+\label{ch:operations}
+
+\section{Availability}
+\label{sec:availability}
+
+Quarterly availability stayed above the \SI{99.9}{\percent} target, as \cref{tab:availability} shows.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Service availability per quarter.}
+  \label{tab:availability}
+  \begin{tabular}{l S[table-format=2.2] S[table-format=2.0]}
+    \toprule
+    {Quarter} & {Availability (\si{\percent})} & {Incidents} \\
+    \midrule
+    Q1 & 99.95 &  4 \\
+    Q2 & 99.91 &  7 \\
+    Q3 & 99.97 &  2 \\
+    Q4 & 99.93 & 11 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\section{Incidents}
+\label{sec:incidents}
+
+Most incidents were configuration changes rolled back within \SI{15}{\minute}.

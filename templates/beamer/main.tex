@@ -1,0 +1,42 @@
+\documentclass[aspectratio=169]{beamer}
+\usepackage{style/ternlatex}
+
+\title{Live \LaTeX{} Editing}
+\subtitle{Build latency in practice}
+\author{Ada Example}
+\date{\today}
+
+\begin{document}
+
+\begin{frame}
+  \titlepage
+\end{frame}
+
+\begin{frame}{Motivation}
+  \begin{itemize}
+    \item Writers want to see the PDF update as they type.
+    \item Batch builds break concentration.
+    \item A warm package cache removes most of the waiting.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Results}
+  \centering
+  \begin{tabular}{l S[table-format=3.0] S[table-format=1.2]}
+    \toprule
+    {Document} & {Pages} & {Latency (\si{\second})} \\
+    \midrule
+    Letter  &   1 & 0.41 \\
+    Article &   8 & 0.86 \\
+    Report  &  64 & 2.35 \\
+    \bottomrule
+  \end{tabular}
+\end{frame}
+
+\begin{frame}{Conclusion}
+  \begin{block}{Take-away}
+    Short documents rebuild in under \SI{1}{\second}, which is fast enough for a live loop.
+  \end{block}
+\end{frame}
+
+\end{document}

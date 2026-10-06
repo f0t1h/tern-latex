@@ -1,0 +1,25 @@
+\section{Introduction}
+\label{sec:introduction}
+
+Fast feedback changes how people write.
+\Citet{knuth1984} designed \TeX{} for batch typesetting, yet modern engines such as XeTeX \citep{kew2008} are quick enough for an interactive loop.
+\Cref{sec:results} reports the latency we observed, and \cref{fig:loop} sketches the loop itself.
+
+\begin{figure}[htbp]
+  \centering
+  \begin{tikzpicture}[
+      node distance = 12mm,
+      box/.style = {draw = tlaccent, thick, rounded corners, minimum width = 22mm,
+                    minimum height = 9mm, font = \sffamily\small},
+      arrow/.style = {-latex, thick, tlmuted},
+    ]
+    \node[box] (edit) {Edit};
+    \node[box, right = of edit] (build) {Build};
+    \node[box, right = of build] (view) {View};
+    \draw[arrow] (edit) -- (build);
+    \draw[arrow] (build) -- (view);
+    \draw[arrow] (view.south) to[bend left = 25] (edit.south);
+  \end{tikzpicture}
+  \caption{The live editing loop. Replace this drawing with \code{\textbackslash includegraphics\{figures/...\}}.}
+  \label{fig:loop}
+\end{figure}

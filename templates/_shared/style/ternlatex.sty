@@ -1,0 +1,254 @@
+% ternlatex house style.
+% Class-agnostic: article, report, book, letter and beamer.
+% Loaded with \usepackage{style/ternlatex}; all visual decisions live here.
+% Requires XeTeX (Tectonic). Fonts come from the Tectonic bundle, so builds are reproducible.
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{style/ternlatex}[2026/10/02 ternlatex house style]
+
+% ---------------------------------------------------------------------------
+% Class detection
+% ---------------------------------------------------------------------------
+\newif\iftl@beamer
+\@ifclassloaded{beamer}{\tl@beamertrue}{\tl@beamerfalse}
+\newif\iftl@sections   % class has \section (not letter-like classes)
+\@ifundefined{section}{\tl@sectionsfalse}{\tl@sectionstrue}
+\newif\iftl@floats     % class defines figure/table floats
+\@ifundefined{c@figure}{\tl@floatsfalse}{\tl@floatstrue}
+
+% ---------------------------------------------------------------------------
+% Fonts: Libertinus (text + math), Fira Mono (code). All ship in the bundle.
+% To swap, change the file stems below (e.g. TeX Gyre: texgyrepagella-regular.otf),
+% or put fonts in fonts/ and add Path=fonts/ to the option list.
+% ---------------------------------------------------------------------------
+\RequirePackage{amsmath}
+\RequirePackage{fontspec}
+\RequirePackage{unicode-math}
+\iftl@beamer
+  % Keep beamer from replacing the math fonts with its own sans setup.
+  \usefonttheme{professionalfonts}
+\fi
+\setmainfont{LibertinusSerif}[
+  Extension      = .otf,
+  UprightFont    = *-Regular,
+  BoldFont       = *-Bold,
+  ItalicFont     = *-Italic,
+  BoldItalicFont = *-BoldItalic,
+  % Numbers      = OldStyle,   % old-style figures in running text
+]
+\setsansfont{LibertinusSans}[
+  Extension      = .otf,
+  UprightFont    = *-Regular,
+  BoldFont       = *-Bold,
+  ItalicFont     = *-Italic,
+]
+\setmonofont{FiraMono}[
+  Extension      = .otf,
+  UprightFont    = *-Regular,
+  BoldFont       = *-Bold,
+  Scale          = MatchLowercase,
+]
+\setmathfont{LibertinusMath-Regular.otf}
+
+\iftl@beamer
+  % beamer redefines footnotes; microtype's footnote patch cannot apply there.
+  \PassOptionsToPackage{nopatch=footnote}{microtype}
+\fi
+\RequirePackage[
+  protrusion = true,
+  % expansion is not supported by XeTeX; protrusion only.
+]{microtype}
+
+% ---------------------------------------------------------------------------
+% Page layout (not beamer: beamer controls its own frame geometry)
+% ---------------------------------------------------------------------------
+\iftl@beamer\else
+  \RequirePackage[
+    a4paper,
+    % letterpaper,
+    margin = 25mm,
+    % top = 25mm, bottom = 30mm, left = 30mm, right = 25mm,
+    headheight = 14pt,
+    % Review \comment boxes live in the margin; keep them inside the 25 mm.
+    marginparwidth = 20mm,
+    marginparsep = 2mm,
+  ]{geometry}
+\fi
+
+% ---------------------------------------------------------------------------
+% Colour palette. Use these names instead of raw colour values.
+% ---------------------------------------------------------------------------
+\RequirePackage{xcolor}
+\definecolor{tlaccent}{HTML}{1F5F8B}  % headings, links, caption labels
+\definecolor{tlmuted}{HTML}{5B6770}   % secondary text, headers/footers
+\definecolor{tlrule}{HTML}{B8C2CC}    % rules and frames
+\definecolor{tlcodebg}{HTML}{F4F6F8}  % code listing background
+\definecolor{tlwarn}{HTML}{B5462B}    % notes and highlights
+
+% ---------------------------------------------------------------------------
+% Tables, numbers, graphics, lists, code
+% ---------------------------------------------------------------------------
+\RequirePackage{graphicx}
+\RequirePackage{booktabs}
+\RequirePackage{tabularx}
+\RequirePackage{siunitx}
+\sisetup{
+  group-digits      = integer,
+  % group-separator = {,},
+  per-mode          = symbol,
+  % uncertainty-mode = separate,
+}
+\iftl@beamer\else
+  \RequirePackage{enumitem}
+  \setlist{itemsep = 0.2em, topsep = 0.4em}
+\fi
+\RequirePackage{listings}
+\lstset{
+  basicstyle       = \ttfamily\small,
+  keywordstyle     = \color{tlaccent}\bfseries,
+  commentstyle     = \color{tlmuted}\itshape,
+  stringstyle      = \color{tlwarn},
+  backgroundcolor  = \color{tlcodebg},
+  frame            = single,
+  rulecolor        = \color{tlrule},
+  framesep         = 4pt,
+  breaklines       = true,
+  columns          = fullflexible,
+  keepspaces       = true,
+  showstringspaces = false,
+  % numbers        = left, numberstyle = \tiny\color{tlmuted},
+}
+
+% ---------------------------------------------------------------------------
+% Captions (not beamer, only where floats exist)
+% ---------------------------------------------------------------------------
+\iftl@beamer\else\iftl@floats
+  \RequirePackage{caption}
+  \DeclareCaptionFont{tlaccent}{\color{tlaccent}}
+  \captionsetup{
+    font      = small,
+    labelfont = {bf, tlaccent},
+    format    = hang,
+    % justification = raggedright,
+    % skip    = 6pt,
+  }
+  \captionsetup[table]{position = top}
+\fi\fi
+
+% ---------------------------------------------------------------------------
+% Headings (not beamer, only classes with sectioning)
+% ---------------------------------------------------------------------------
+\iftl@beamer\else\iftl@sections
+  \RequirePackage{titlesec}
+  \titleformat{\section}
+    {\sffamily\Large\bfseries\color{tlaccent}}{\thesection}{0.8em}{}
+  \titleformat{\subsection}
+    {\sffamily\large\bfseries\color{tlaccent}}{\thesubsection}{0.8em}{}
+  \titleformat{\subsubsection}
+    {\sffamily\normalsize\bfseries}{\thesubsubsection}{0.8em}{}
+  \@ifundefined{chapter}{}{%
+    \titleformat{\chapter}[display]
+      {\sffamily\huge\bfseries\color{tlaccent}}
+      {\large\chaptertitlename\ \thechapter}{0.5em}{}
+    \titlespacing*{\chapter}{0pt}{0pt}{2em}
+  }
+  % \titlespacing*{\section}{0pt}{1.5em}{0.6em}
+\fi\fi
+
+% ---------------------------------------------------------------------------
+% Headers and footers (not beamer, only classes with sectioning)
+% ---------------------------------------------------------------------------
+\iftl@beamer\else\iftl@sections
+  \RequirePackage{fancyhdr}
+  \fancypagestyle{tlplain}{%
+    \fancyhf{}%
+    \renewcommand{\headrulewidth}{0pt}%
+    \fancyfoot[C]{\color{tlmuted}\small\thepage}%
+  }
+  \pagestyle{tlplain}
+  % Running headers instead:
+  % \pagestyle{fancy}\fancyhf{}
+  % \fancyhead[L]{\color{tlmuted}\small\leftmark}
+  % \fancyfoot[C]{\color{tlmuted}\small\thepage}
+  \@ifundefined{chapter}{}{\fancypagestyle{plain}{%
+    \fancyhf{}\renewcommand{\headrulewidth}{0pt}%
+    \fancyfoot[C]{\color{tlmuted}\small\thepage}}}
+\fi\fi
+
+% ---------------------------------------------------------------------------
+% Title page (article/report/book)
+% ---------------------------------------------------------------------------
+\newcommand{\tltitlefont}{\sffamily\bfseries\color{tlaccent}}
+\iftl@beamer
+  \setbeamercolor{structure}{fg=tlaccent}
+  \setbeamercolor{title}{fg=tlaccent}
+  \setbeamercolor{frametitle}{fg=tlaccent}
+  \setbeamerfont{title}{series=\bfseries}
+  \setbeamerfont{frametitle}{series=\bfseries}
+  \setbeamertemplate{navigation symbols}{}
+\else\iftl@sections
+  \RequirePackage{titling}
+  \pretitle{\begin{center}\LARGE\tltitlefont}
+  \posttitle{\par\end{center}\vskip 0.5em}
+  \preauthor{\begin{center}\large\begin{tabular}[t]{c}}
+  \postauthor{\end{tabular}\par\end{center}}
+  \predate{\begin{center}\color{tlmuted}}
+  \postdate{\par\end{center}}
+\fi\fi
+
+% ---------------------------------------------------------------------------
+% Semantic macros. Prefer these to hard-coded fonts, colours and spacing.
+% ---------------------------------------------------------------------------
+\newcommand{\keyterm}[1]{\emph{#1}}             % first use of a defined term
+\newcommand{\code}[1]{\texttt{#1}}              % inline code / identifiers
+\newcommand{\tlnote}[1]{\textcolor{tlwarn}{[#1]}}  % visible author note
+\newcommand{\tlfigplaceholder}[2][0.6\linewidth]{% framed stand-in for a missing figure
+  \fcolorbox{tlrule}{tlcodebg}{\parbox[c][4cm][c]{#1}{\centering\color{tlmuted}#2}}}
+
+% ---------------------------------------------------------------------------
+% Review markup: the changes package (\added, \deleted, \replaced, \comment,
+% \highlight with [id=AUTHOR]). Authors and draft/final come from [review] in
+% ternlatex.toml through the generated style/ternlatex-review.tex, rewritten
+% before every build: it passes draft/final to changes (fixed at package load)
+% and defines \tlreviewsetup, which declares the authors once changes is loaded.
+% ---------------------------------------------------------------------------
+\InputIfFileExists{style/ternlatex-review.tex}{}{}
+\iftl@beamer
+  % Slides have no margin for todonotes: comments become footnotes on the frame.
+  \PassOptionsToPackage{commentmarkup=footnote}{changes}
+\fi
+\RequirePackage{changes}
+\csname tlreviewsetup\endcsname
+
+% ---------------------------------------------------------------------------
+% Citations (not beamer, not letter-like classes without thebibliography;
+% skipped if the class already loaded natbib)
+% ---------------------------------------------------------------------------
+\iftl@beamer\else\@ifundefined{thebibliography}{}{%
+  \@ifpackageloaded{natbib}{}{%
+    \RequirePackage[
+      round,
+      % numbers, square,   % numeric citations
+      sort&compress,
+    ]{natbib}}
+}\fi
+
+% ---------------------------------------------------------------------------
+% Cross-references: hyperref, then cleveref, always last.
+% beamer loads hyperref itself.
+% ---------------------------------------------------------------------------
+\iftl@beamer\else
+  \RequirePackage{hyperref}
+\fi
+\hypersetup{
+  colorlinks = true,
+  linkcolor  = tlaccent,
+  citecolor  = tlaccent,
+  urlcolor   = tlaccent,
+  % hidelinks,
+}
+\RequirePackage[
+  capitalise,
+  noabbrev,
+]{cleveref}
+
+\endinput

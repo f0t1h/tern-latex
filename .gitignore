@@ -1,0 +1,21 @@
+node_modules/
+build/
+dist/
+.omp/
+.env
+.env.*
+.DS_Store
+*.tmp
+# LaTeX artifacts from trying things at the repo root; test/fixtures/ holds real ones on purpose.
+/*.aux
+/*.log
+/*.out
+/*.toc
+/*.bbl
+/*.blg
+/*.fls
+/*.fdb_latexmk
+/*.synctex.gz
+/*.pdf
+# The plugin package's per-machine config, written by ternlatex into packages it links.
+/config.json

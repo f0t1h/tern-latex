@@ -1,0 +1,123 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        # Git Bash on Windows, so every step is the same script on all three.
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      # Tools ternlatex downloads (tectonic, pandoc, latexdiff) and Tectonic's TeX package cache.
+      # (The runner context is not available in job-level env.)
+      - run: echo "TERNLATEX_CACHE=$RUNNER_TEMP/ternlatex-cache" >> "$GITHUB_ENV"
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      - run: bun install --frozen-lockfile
+      - run: bunx tsc -p .
+      - run: bun test
+
+      - uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/ternlatex-cache
+          key: ternlatex-cache-${{ runner.os }}-${{ hashFiles('src/tools.ts', 'templates/**') }}
+          restore-keys: ternlatex-cache-${{ runner.os }}-
+
+      # dist/ternlatex-<os>-<arch>, with .exe on Windows; $PWD is a path Git Bash can run it from.
+      - name: compile the binary
+        run: |
+          bun run build
+          bin=$(ls dist/ternlatex-*)
+          echo "BIN=$PWD/$bin" >> "$GITHUB_ENV"
+
+      - name: smoke — tools download, every template builds
+        run: '"$BIN" doctor --warm'
+
+      - name: smoke — init, build, snapshot
+        working-directory: ${{ runner.temp }}
+        run: |
+          git config --global user.name ci
+          git config --global user.email ci@localhost
+          "$BIN" init paper
+          cd paper
+          "$BIN" build
+          "$BIN" snapshot --page 1
+
+      - name: smoke — dev rebuilds on save
+        working-directory: ${{ runner.temp }}/paper
+        run: |
+          "$BIN" dev --no-tern --port 47900 > dev.log 2>&1 &
+          rev() { curl -fs "http://127.0.0.1:47900/status?doc=main" | sed -n 's/.*"rev":\([0-9]*\).*/\1/p'; }
+          for _ in $(seq 60); do r=$(rev || true); [ -n "$r" ] && [ "$r" -ge 1 ] && break; sleep 1; done
+          first=$(rev)
+          echo "% saved by ci" >> sections/results.tex
+          for _ in $(seq 60); do r=$(rev); [ "$r" -gt "$first" ] && break; sleep 1; done
+          cat dev.log
+          [ "$(rev)" -gt "$first" ]
+          curl -fs -o /dev/null http://127.0.0.1:47900/pdfjs/pdf.min.mjs
+          pid=$(sed -n 's/.*"pid":\([0-9]*\).*/\1/p' build/.server.json)
+          "$BIN" restart
+          [ "$(sed -n 's/.*"pid":\([0-9]*\).*/\1/p' build/.server.json)" != "$pid" ]
+          curl -fs -o /dev/null http://127.0.0.1:47900/status
+          "$BIN" stop
+          wait %1
+          [ ! -e build/.server.json ]
+
+      # ternlatex as a plugin Tern installed runs it: a plain copy of the tracked files, its dependencies
+      # installed from bun.lock into its own node_modules (the plugin's setup step). Then its install-cli
+      # launcher (ternlatex.cmd on Windows, which Git Bash runs directly).
+      - name: smoke — a plain copy runs after bun install --frozen-lockfile
+        working-directory: ${{ runner.temp }}
+        run: |
+          tmp=$RUNNER_TEMP
+          if command -v cygpath > /dev/null; then tmp=$(cygpath -m "$tmp"); fi
+          mkdir -p "$tmp/plain"
+          (cd "$GITHUB_WORKSPACE" && git ls-files -z | tar --null -T - -cf -) | tar -xf - -C "$tmp/plain"
+          (cd "$tmp/plain" && bun install --frozen-lockfile --production)
+          tl() { bun "$tmp/plain/src/cli.ts" "$@"; }
+          tl --help
+          tl init plainpaper
+          cd plainpaper
+          tl build
+          tl snapshot --page 1
+          tl install-cli "$tmp/plainbin"
+          bin="$tmp/plainbin/ternlatex"
+          [ -e "$bin.cmd" ] && bin="$bin.cmd"
+          "$bin" --help
+
+      # ternlatex as users install it: the checkout as a Bun package, in an isolated global dir. Packed first,
+      # as a GitHub install unpacks a tarball: `file:<dir>` links each file back into the checkout, where Bun
+      # then resolves the dependencies (outside node_modules). On Windows, bun puts a ternlatex.exe shim in
+      # $BUN_INSTALL/bin, and paths are made forward-slashed for Git Bash.
+      - name: smoke — installed as a Bun package
+        working-directory: ${{ runner.temp }}
+        run: |
+          tmp=$RUNNER_TEMP
+          if command -v cygpath > /dev/null; then tmp=$(cygpath -m "$tmp"); fi
+          (cd "$GITHUB_WORKSPACE" && bun pm pack --destination "$tmp/pack")
+          export BUN_INSTALL="$tmp/bunglobal"
+          bun add -g "file:$(ls "$tmp"/pack/ternlatex-*.tgz)"
+          bin="$BUN_INSTALL/bin/ternlatex"
+          [ -e "$bin" ] || bin="$bin.exe"
+          "$bin" --help
+          "$bin" init pkgpaper
+          cd pkgpaper
+          "$bin" build
+          "$bin" snapshot --page 1
