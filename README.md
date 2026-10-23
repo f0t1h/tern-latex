@@ -128,6 +128,14 @@ pull and push your edits as usual. Overleaf compiles with pdfLaTeX by default an
 (XeLaTeX); if the document needs pdfLaTeX, set `engine = "latexmk"` and `latexmk_args = ["-pdf"]` to use
 your own TeX Live.
 
+Co-authors keep editing in Overleaf, so omp works on the latest version: before omp's first edit of each
+request, ternlatex fetches from Overleaf and rebases the clone onto it (your commits on top, uncommitted
+edits to other files kept). When that brought changes, omp's edit is refused once with the files that
+changed, so it reads them again before writing. It never pushes, and it leaves the clone alone (and omp
+tells you) when you have uncommitted edits to a file Overleaf also changed, or a commit of yours
+conflicts with Overleaf's. `ternlatex pull` does the same by hand. Other remotes (GitHub, a co-author's
+server) are not pulled.
+
 ## Using ternlatex
 
 Keys are written for macOS. On Windows and Linux, ⌘ is Ctrl and ⌥ is Alt: ⌘⌥J is Ctrl+Alt+J.
@@ -372,6 +380,7 @@ Run commands anywhere inside a project (a folder with `ternlatex.toml`), or pass
 | `stop [DIR]` / `restart [DIR]` | stops or restarts the running dev server |
 | `docs` | lists the project's documents and their last build |
 | `models` | shows which model each task uses (omp roles `latex`, `proofread`, `rewrite`) |
+| `pull [--json]` | in a clone of an Overleaf project, rebases onto Overleaf's latest; never pushes |
 | `build [DIR] [--doc NAME] [--all] [--force]` | builds through the running dev server if any; prints `file:line: severity: message`, exits 1 on errors; `--all` adds info messages |
 | `snapshot (--page N \| FILE:LINE) [--doc NAME] [--dpi N] [--out PNG]` | renders one PDF page to PNG (default `build/snapshots/<doc>-page-N.png`) |
 | `show FILE:LINE [--doc NAME]` | scrolls the viewer to a source line and highlights it |

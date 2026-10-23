@@ -15,6 +15,7 @@ import { installCli } from "./commands/install-cli.ts";
 import { models } from "./commands/models.ts";
 import { outlineCommand } from "./commands/outline.ts";
 import { peek } from "./commands/peek.ts";
+import { pull } from "./commands/pull.ts";
 import { refs } from "./commands/refs.ts";
 import { rewriteCommand } from "./commands/rewrite.ts";
 import { proofreadCommand } from "./commands/proofread.ts";
@@ -59,6 +60,8 @@ writing
                           rebuilt ternlatex and ternlatex.toml changes
   docs                    list the project's documents and their last build
   models                  which model each task uses: omp roles latex (the omp block), proofread, rewrite
+  pull [--json]           in a clone of an Overleaf project: rebase onto Overleaf's latest (never pushes;
+                          omp's extension runs it before omp's first edit of each request)
   build [DIR] [--doc NAME] [--all] [--force]
                           build every document (or one), through the running dev server if any;
                           prints diagnostics, exits 1 on errors; --all includes info-level messages.
@@ -164,6 +167,10 @@ async function main(argv: string[]): Promise<number> {
     case "models": {
       parseArgs({ args: rest, allowPositionals: false, options: {} });
       return models();
+    }
+    case "pull": {
+      const { values } = parseArgs({ args: rest, allowPositionals: false, options: { json: { type: "boolean", default: false } } });
+      return pull(values.json);
     }
     case "build": {
       const { values, positionals } = parseArgs({ args: rest, allowPositionals: true, options: { all: { type: "boolean", default: false }, doc: { type: "string" }, force: { type: "boolean", default: false } } });

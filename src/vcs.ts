@@ -27,6 +27,8 @@ export interface GitResult {
 
 export interface GitOptions {
   env?: Record<string, string>;
+  /** Kills git after this long (a network fetch); it then fails like any other git error. */
+  timeoutMs?: number;
 }
 
 /** Runs the resolved git in CWD. Never throws; check `code`. */
@@ -48,7 +50,11 @@ export async function git(cwd: string, args: string[], o: GitOptions = {}): Prom
   child.stdout.on("data", (b: Buffer) => (stdout += b));
   child.stderr.on("data", (b: Buffer) => (stderr += b));
   child.on("error", (e: NodeJS.ErrnoException) => resolve({ code: null, stdout, stderr, spawnError: `cannot run ${command[0]}: ${e.code ?? e.message}` }));
-  child.on("close", (code) => resolve({ code, stdout, stderr }));
+  const timer = o.timeoutMs ? setTimeout(() => child.kill("SIGTERM"), o.timeoutMs) : undefined;
+  child.on("close", (code) => {
+    clearTimeout(timer);
+    resolve({ code, stdout, stderr: code === null && timer ? `${stderr}timed out after ${(o.timeoutMs ?? 0) / 1000} s` : stderr });
+  });
   return promise;
 }
 

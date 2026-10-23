@@ -58,12 +58,52 @@ export interface BeforeAgentStart {
   systemPrompt: string | string[];
 }
 
+/** omp's `tool_call` event: a tool about to run. */
+export interface ToolCall {
+  toolName: string;
+}
+
 /** The slice of omp's ExtensionAPI this extension uses. */
 export interface ExtensionAPI {
   zod: SchemaBuilder;
   exec(command: string, args: string[], options: { cwd: string; signal?: AbortSignal }): Promise<ExecResult>;
   on(event: "before_agent_start", handler: (event: BeforeAgentStart, ctx: SessionContext) => { systemPrompt: string | string[] } | undefined): void;
+  on(event: "agent_start", handler: () => void): void;
+  on(event: "tool_call", handler: (event: ToolCall, ctx: SessionContext) => Promise<{ block: true; reason: string } | undefined>): void;
   registerTool<P>(tool: ToolDefinition<P>): void;
+}
+
+/** omp's tools that change files; the first of them in a request waits for `ternlatex pull`. */
+const EDIT_TOOLS: Record<string, true> = { edit: true, write: true, ast_edit: true, apply_patch: true };
+
+/** `ternlatex pull --json` (src/overleaf.ts PullResult). */
+export interface Pulled {
+  overleaf: boolean;
+  pulled: number;
+  files: string[];
+  problem?: string;
+}
+
+/** Why omp's first edit of a request must wait, from `ternlatex pull --json`: null when it may go ahead. */
+export function pullVerdict(stdout: string): string | null {
+  let data: unknown;
+  try {
+    data = JSON.parse(stdout);
+  } catch {
+    return null; // Not run (no ternlatex on PATH); the edit itself is unaffected.
+  }
+  if (!data || typeof data !== "object" || !("overleaf" in data) || data.overleaf !== true) return null;
+  const r: Pulled = {
+    overleaf: true,
+    pulled: "pulled" in data && typeof data.pulled === "number" ? data.pulled : 0,
+    files: "files" in data && Array.isArray(data.files) ? data.files.filter((f): f is string => typeof f === "string") : [],
+    problem: "problem" in data && typeof data.problem === "string" ? data.problem : undefined,
+  };
+  if (r.problem) {
+    return `This project is a clone of an Overleaf project and Overleaf's latest version could not be pulled: ${r.problem}. Tell the user before editing, and edit only if they say so.`;
+  }
+  if (!r.pulled) return null;
+  return `Pulled ${r.pulled} new commit(s) from Overleaf before this edit, changing ${r.files.join(", ")}. What you read of those files may be out of date: read the files again, then make the edit again.`;
 }
 
 export interface BuildParams {
@@ -101,6 +141,27 @@ export default function ternlatex(pi: ExtensionAPI): void {
     if (!projectOf(ctx.cwd)) return undefined;
     const base = event.systemPrompt;
     return { systemPrompt: Array.isArray(base) ? [...base, CONTEXT] : `${base}\n\n${CONTEXT}` };
+  });
+
+  // A clone of an Overleaf project is rebased onto Overleaf's latest before omp's first edit of each request
+  // (co-authors keep editing in the browser). Edit calls that arrive while that pull runs wait for it, and are
+  // refused when it brought changes, so omp re-reads before writing; later edits in the request go straight through.
+  let pulling: Promise<string | null> | null = null;
+  let pulled = false;
+  pi.on("agent_start", () => {
+    pulling = null;
+    pulled = false;
+  });
+  pi.on("tool_call", async (event, ctx) => {
+    const dir = projectOf(ctx.cwd);
+    if (pulled || !dir || !Object.hasOwn(EDIT_TOOLS, event.toolName)) return undefined;
+    pulling ??= pi.exec("ternlatex", ["pull", "--json"], { cwd: dir }).then(
+      (r) => pullVerdict(r.stdout),
+      () => null,
+    );
+    const reason = await pulling;
+    pulled = true;
+    return reason ? { block: true, reason } : undefined;
   });
 
   /** Runs `ternlatex ARGS` in the project of `ctx`; throws when there is none or ternlatex did not run. */

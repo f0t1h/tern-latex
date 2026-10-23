@@ -46,6 +46,7 @@ Never leave the build broken. If you cannot fix an error, revert your change and
 
 - Never edit `build/`. The project is a git repo; keep every change reviewable.
 - Never commit unless the user asks. Saves are checkpointed automatically; when asked to commit, write a concise message and add `Co-authored-by: omp <omp@localhost>`.
+- In a clone of an Overleaf project (its git remote is git.overleaf.com, or an Overleaf server's `/git/` URL), co-authors edit in the browser too. ternlatex rebases the clone onto Overleaf's latest before your first edit of each request: when that brings changes, your edit is refused once with the files that changed; read them again, then redo the edit. When it reports that Overleaf could not be pulled, tell the user before editing. Never push unless the user asks; `ternlatex pull` brings the clone up to date by hand.
 - Keep diffs minimal. Preserve line structure. Keep one sentence per line where the project already does so.
 - Styling lives in `style/ternlatex.sty` (in imported projects: the existing preamble or style file). Do not put fonts, colours or layout in body files.
 - When the project uses a publisher or venue class (IEEEtran, acmart, llncs, elsarticle, revtex, a NeurIPS/ICML/ICLR/ACL style, a university thesis class), the class owns the layout: do not restyle it, do not load `style/ternlatex.sty` on top of it, and keep the options the venue requires.
