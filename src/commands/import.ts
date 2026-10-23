@@ -2,9 +2,9 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { copyAssets } from "../assets.ts";
-import { CONFIG_FILE, posix, renderConfig, UsageError } from "../config.ts";
+import { CONFIG_FILE, loadConfig, posix, renderConfig, UsageError } from "../config.ts";
 import { build } from "./build.ts";
-import { ensureGit } from "./project.ts";
+import { adoptGit, ensureGit } from "./project.ts";
 import { resolveTool } from "../tools.ts";
 
 /** Formats pandoc converts to LaTeX; `.tex` is adopted as-is instead. */
@@ -41,7 +41,7 @@ export async function importProject(src: string, dest: string | undefined): Prom
   if (!existsSync(join(dir, CONFIG_FILE))) writeFileSync(join(dir, CONFIG_FILE), renderConfig(roots));
   console.log(`adopted ${dir}: ${roots.length === 1 ? `root = ${roots[0]}` : `${roots.length} documents (${roots.join(", ")}); edit [[documents]] in ${CONFIG_FILE} to drop any`}`);
   for (const w of compatibility(dir)) console.warn(`warning: ${w}`);
-  await ensureGit(dir);
+  await adoptGit(dir, loadConfig(dir).outdir);
   return build(dir, false);
 }
 

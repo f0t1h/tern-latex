@@ -1744,7 +1744,7 @@ tern.command({
 
 tern.command({
 	id = "new-project",
-	title = "New LaTeX project here…",
+	title = "New LaTeX project here… (or adopt this folder)",
 	group = GROUP,
 	available = desktop,
 	run = function(cx: WindowCx)
@@ -1759,22 +1759,26 @@ tern.command({
 			cx:toast("error", "New LaTeX project not created", tostring(names))
 			return
 		end
+		-- A folder with files already (a cloned Overleaf project, a co-author's repo) is adopted in place:
+		-- `import` finds its root .tex and keeps ternlatex's own files out of its git repository.
+		local adopt = false
 		for _, name in names do
 			if string.sub(name, 1, 1) ~= "." then
-				cx:toast("error", "New LaTeX project not created", dir .. " is not empty; use an empty folder (or Start ternlatex here in a project).")
-				return
+				adopt = true
+				break
 			end
 		end
-		local err = run_cli(cx, { "init", dir }, dir, function(result, c)
+		local what = if adopt then "LaTeX project not adopted" else "New LaTeX project not created"
+		local err = run_cli(cx, { if adopt then "import" else "init", dir }, dir, function(result, c)
 			if result.status ~= 0 then
-				c:toast("error", "New LaTeX project not created", common.outcome(result))
+				c:toast("error", what, common.outcome(result))
 				return
 			end
-			c:toast("success", "New LaTeX project", dir)
+			c:toast("success", if adopt then "Adopted LaTeX project" else "New LaTeX project", dir)
 			start_dev(c, dir)
 		end)
 		if err then
-			not_installed(cx, "New LaTeX project not created", err)
+			not_installed(cx, what, err)
 		end
 	end,
 })

@@ -35,8 +35,9 @@ Bun keeps them in its own cache. Then open the palette and type `ternlatex`:
 
 - **Start ternlatex here**: opens a new tab running `ternlatex dev` for the focused block's project (the
   folder with `ternlatex.toml` above it).
-- **New LaTeX project here…**: creates an article project in the focused block's folder, which must be
-  empty apart from dotfiles, then starts it.
+- **New LaTeX project here… (or adopt this folder)**: in an empty folder, creates an article project; in a
+  folder that already has your LaTeX (a cloned Overleaf project, say), adopts it in place
+  (`ternlatex import`). Then starts it.
 - **Add ternlatex to PATH**: puts a `ternlatex` command into Bun's bin folder (`~/.bun/bin`, which Bun's
   installer puts on your `PATH`), so you can run ternlatex in any terminal. If that folder isn't on your
   `PATH`, the plugin's message says how to add it.
@@ -108,6 +109,24 @@ ternlatex import report.docx report   # convert with pandoc (also .odt .md .html
 ```
 
 After a conversion, run `/skill:import-cleanup` in omp to turn pandoc's output into clean LaTeX.
+
+### Overleaf and other shared repositories
+
+Clone the project yourself, then adopt it. For Overleaf, the clone URL is in the project's **Integrations ›
+Git** (a premium Overleaf feature; the password is a Git token from your Overleaf account settings):
+
+```sh
+git clone https://git.overleaf.com/<project-id> paper
+cd paper && ternlatex import . && ternlatex dev
+```
+
+Adopting a repository that already has commits changes nothing in it. ternlatex's own files
+(`ternlatex.toml`, `build/`, `style/ternlatex-review.tex`) are listed in the clone's local
+`.git/info/exclude`, not in `.gitignore`, so they stay untracked and are never committed or pushed, and
+`git status` stays clean. Save checkpoints live on their own ref, which `git push` leaves behind. Commit,
+pull and push your edits as usual. Overleaf compiles with pdfLaTeX by default and ternlatex with Tectonic
+(XeLaTeX); if the document needs pdfLaTeX, set `engine = "latexmk"` and `latexmk_args = ["-pdf"]` to use
+your own TeX Live.
 
 ## Using ternlatex
 
