@@ -380,6 +380,41 @@ function resetTextLayers() {
   document.addEventListener('keyup', () => {
     if (!pointerDown) resetTextLayers();
   });
+  // Dragging onto the blank part of another page (its top margin above the first line, its bottom margin below the
+  // last) hits that page's text layer itself, which WebKit maps to the layer's first or last position: the whole page
+  // at once. While the pointer is there, the selection's moving end is held at that page's near edge (its start when
+  // dragging down, its end when dragging up), so nothing of the page is selected until the pointer reaches its text.
+  /** The other page's text layer the pointer is over blank space of, and whether it lies below the drag's start. */
+  let blank = null;
+  document.addEventListener('pointermove', (e) => {
+    blank = null;
+    if (!pointerDown || firefox) return;
+    const selection = document.getSelection();
+    const from = selection?.rangeCount ? selection.anchorNode : null;
+    const hit = document.elementFromPoint(e.clientX, e.clientY);
+    if (!from || !hit) return;
+    const layer = hit.closest('.textLayer') ?? hit.closest('.page')?.querySelector(':scope > .textLayer');
+    const end = layer && textLayers.get(layer);
+    if (!end || layer.contains(from)) return; // the layer the drag started in: selectionchange handles it
+    if (hit !== layer && hit !== end && !hit.matches('.page, .page > canvas')) return; // over text
+    const below = Boolean(from.compareDocumentPosition(layer) & Node.DOCUMENT_POSITION_FOLLOWING);
+    blank = { layer, below };
+    layer.classList.add('selecting');
+    end.style.width = layer.style.width;
+    end.style.height = layer.style.height;
+    if (below) layer.prepend(end);
+    else layer.append(end);
+  });
+  /** Moves the selection's focus to BLANK's near edge when the browser put it inside that page; true when it did. */
+  const clampToEdge = (selection) => {
+    const { layer, below } = blank;
+    const focus = selection.focusNode;
+    if (!focus || !layer.contains(focus)) return false;
+    const offset = below ? 0 : layer.childNodes.length;
+    if (focus === layer && selection.focusOffset === offset) return false;
+    selection.extend(layer, offset); // fires selectionchange again, which finds it in place
+    return true;
+  };
   document.addEventListener('selectionchange', () => {
     const selection = document.getSelection();
     if (!selection || selection.rangeCount === 0) {
@@ -387,6 +422,7 @@ function resetTextLayers() {
       prevRange = null;
       return;
     }
+    if (pointerDown && blank && clampToEdge(selection)) return;
     const range = selection.getRangeAt(0);
     for (const [div, end] of textLayers) {
       if (!div.isConnected) textLayers.delete(div);
