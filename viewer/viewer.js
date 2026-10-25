@@ -326,10 +326,95 @@ function buildTextLayer(p, viewport, seq) {
       p.pendingText = null;
       if (p.textDiv) p.textDiv.remove();
       p.textDiv = div;
+      trackTextLayer(div);
       p.div.append(div);
     },
     () => {},
   );
+}
+
+// ---------------------------------------------------------------- smooth text selection
+// pdf.js's TextLayerBuilder does this; ternlatex uses the bare TextLayer, so it is ported here. A text layer's
+// spans are absolutely placed with blank space between them, and a drag over that space would otherwise select
+// from the nearest node in DOM order: whole paragraphs above or below, or across pages. Each layer ends with an
+// empty, unselectable `.endOfContent` div that, while selecting, covers the layer under the spans (CSS
+// `.selecting`) and is moved right next to the span being extended, so blank space extends the selection to that
+// span at most.
+
+/** Live text layers and their endOfContent divs. */
+const textLayers = new Map();
+
+function trackTextLayer(div) {
+  const end = el('div', 'endOfContent');
+  div.append(end);
+  div.addEventListener('mousedown', () => div.classList.add('selecting'));
+  for (const d of textLayers.keys()) if (!d.isConnected) textLayers.delete(d);
+  textLayers.set(div, end);
+}
+
+function resetTextLayer(end, div) {
+  div.append(end);
+  end.style.width = '';
+  end.style.height = '';
+  div.classList.remove('selecting');
+}
+
+function resetTextLayers() {
+  for (const [div, end] of textLayers) resetTextLayer(end, div);
+}
+
+{
+  let pointerDown = false;
+  let prevRange = null;
+  // Firefox limits the jump itself; moving endOfContent there would get in its way (pdf.js skips it too).
+  const firefox = CSS.supports('-moz-user-select', 'none');
+  document.addEventListener('pointerdown', () => (pointerDown = true));
+  document.addEventListener('pointerup', () => {
+    pointerDown = false;
+    resetTextLayers();
+  });
+  window.addEventListener('blur', () => {
+    pointerDown = false;
+    resetTextLayers();
+  });
+  document.addEventListener('keyup', () => {
+    if (!pointerDown) resetTextLayers();
+  });
+  document.addEventListener('selectionchange', () => {
+    const selection = document.getSelection();
+    if (!selection || selection.rangeCount === 0) {
+      resetTextLayers();
+      prevRange = null;
+      return;
+    }
+    const range = selection.getRangeAt(0);
+    for (const [div, end] of textLayers) {
+      if (!div.isConnected) textLayers.delete(div);
+      else if (range.intersectsNode(div)) div.classList.add('selecting');
+      else resetTextLayer(end, div);
+    }
+    if (firefox) return;
+    // Which end of the selection moved: put endOfContent just past it, so blank space can't reach further.
+    const modifyStart =
+      prevRange && (range.compareBoundaryPoints(Range.END_TO_END, prevRange) === 0 || range.compareBoundaryPoints(Range.START_TO_END, prevRange) === 0);
+    let anchor = modifyStart ? range.startContainer : range.endContainer;
+    if (anchor.nodeType === Node.TEXT_NODE) anchor = anchor.parentNode;
+    if (!modifyStart && range.endOffset === 0) {
+      // The end sits at the very start of a node: the text actually selected ends in the node before it.
+      do {
+        while (anchor && !anchor.previousSibling) anchor = anchor.parentNode;
+        anchor = anchor?.previousSibling ?? null;
+      } while (anchor && !anchor.childNodes.length);
+    }
+    const layer = anchor?.parentElement?.closest('.textLayer');
+    const end = layer && textLayers.get(layer);
+    if (end && anchor !== end) {
+      end.style.width = layer.style.width;
+      end.style.height = layer.style.height;
+      anchor.parentElement.insertBefore(end, modifyStart ? anchor : anchor.nextSibling);
+    }
+    prevRange = range.cloneRange();
+  });
 }
 
 let pumpTimer = 0;

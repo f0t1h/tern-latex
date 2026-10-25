@@ -495,6 +495,9 @@ body.diff-mode { --top: calc(var(--bar-h) + var(--diff-h)); }
   width: max-content;
   min-width: 100%;
   padding: 12px 12px 4px;
+  /* Only text layers select: a drag across the gap between pages must not paint whole pages and canvases as selected. */
+  user-select: none;
+  -webkit-user-select: none;
 }
 .pages.staging {
   position: absolute;
@@ -736,6 +739,7 @@ body.diff-mode { --top: calc(var(--bar-h) + var(--diff-h)); }
 .textLayer span[role="img"] { user-select: none; -webkit-user-select: none; cursor: default; }
 .textLayer ::selection { background: rgba(0, 100, 255, 0.25); }
 .textLayer br::selection { background: transparent; }
+.textLayer { user-select: text; -webkit-user-select: text; }
 .textLayer .endOfContent {
   display: block;
   position: absolute;
