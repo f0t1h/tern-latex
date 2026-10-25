@@ -2310,13 +2310,21 @@ function clip(s) {
   return t.length > SNIPPET_MAX ? `${t.slice(0, SNIPPET_MAX)}…` : t;
 }
 
+/** The change inline in its sentence: a few words around it, faded, then the struck old text and the new text. */
 function snippet(c) {
   const div = el('div', 'snippet');
-  if (c.kind === 'replaced') div.append(el('del', null, clip(c.old)), ' → ', el('ins', null, clip(c.text)));
+  if (c.kind === 'comment') {
+    div.textContent = clip(c.text);
+    return div;
+  }
+  // The context carries its own spacing to the change (none before a period).
+  if (c.before) div.append(el('span', 'ctx', c.before));
+  if (c.kind === 'replaced') div.append(el('del', null, clip(c.old)), ' ', el('ins', null, clip(c.text)));
   else if (c.kind === 'deleted') div.append(el('del', null, clip(c.text)));
   else if (c.kind === 'added') div.append(el('ins', null, clip(c.text)));
   else if (c.kind === 'highlight') div.append(el('mark', null, clip(c.text)));
-  else div.textContent = clip(c.text);
+  else div.append(clip(c.text));
+  if (c.after) div.append(el('span', 'ctx', c.after));
   return div;
 }
 

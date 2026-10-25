@@ -19,7 +19,7 @@ const dir = resolve(import.meta.dirname, "fixtures/review");
 const markup = readFileSync(join(dir, "markup.tex"), "utf8");
 
 test("scan finds each command with author, line, args and comment key, skipping escapes, comments and verbatim", () => {
-  const got = scanText("markup.tex", markup).map(({ change: { id, ...c } }) => c);
+  const got = scanText("markup.tex", markup).map(({ change: { id, before, after, ...c } }) => c);
   assert.deepEqual(got, [
     { kind: "added", author: "AK", file: "markup.tex", line: 3, text: "the median" },
     { kind: "deleted", author: "AK", file: "markup.tex", line: 4, text: "sharply", comment: "too strong, see \\S2" },
@@ -31,6 +31,28 @@ test("scan finds each command with author, line, args and comment key, skipping 
     { kind: "comment", author: "BW", file: "markup.tex", line: 15, text: "A whole-line note." },
     { kind: "added", author: undefined, file: "markup.tex", line: 17, text: "anonymous % brace } in a comment\ntext" },
   ]);
+});
+
+test("each change carries a few words around it, as the text reads with other changes accepted, within its paragraph", () => {
+  const text = [
+    "First paragraph ends here.",
+    "",
+    "We measured \\replaced[id=proof]{the}{teh} median latency of the cache and \\deleted[id=AK]{very} found that the results",
+    "\\added[id=proof]{are} better than expected in most cases. % a comment",
+    "",
+    "Next paragraph.",
+  ].join("\n");
+  const [first, second, third] = scanText("x.tex", text).map((l) => l.change);
+  // Nothing of the other paragraphs, and no markup: neighbouring changes read as accepted.
+  // Each side keeps the space that separates it from the change in the source.
+  assert.deepEqual([first.before, first.after], ["We measured ", " median latency of the cache …"]);
+  assert.deepEqual([second.before, second.after], ["… latency of the cache and ", " found that the results are …"]);
+  assert.deepEqual([third.before, third.after], ["… and found that the results ", " better than expected in most …"]);
+  // What the reader sees instead of keys: placeholders for citations and references, logos by name, labels gone.
+  const keyed = scanText("y.tex", "\\Citet{k} showed \\cref{sec:a}\\label{x}: \\TeX{} \\added[id=proof]{is} fast.").map((l) => l.change)[0];
+  assert.equal(keyed.before, "[cite] showed [ref]: TeX ");
+  // No space appears between a change and the punctuation right after it.
+  assert.equal(scanText("z.tex", "people \\replaced[id=proof]{write}{writes}. Then").map((l) => l.change)[0].after, ". Then");
 });
 
 test("ids are stable when other lines move and distinct for repeated identical changes", () => {

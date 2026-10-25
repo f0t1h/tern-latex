@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { BUILTIN_AUTHORS, type Change, PROOF_AUTHOR, resolveChanges, scanChanges } from "./changes.ts";
+import { BUILTIN_AUTHORS, type Change, contextAround, PROOF_AUTHOR, resolveChanges, scanChanges } from "./changes.ts";
 import { type Config, paths, type ReviewAuthor } from "./config.ts";
 import type { Hunk } from "./proofread.ts";
 
@@ -93,7 +93,17 @@ export function pendingChanges(cfg: Config): Change[] {
     if (at === null || !text) continue;
     const line = text.slice(0, at).split("\n").length;
     const kind = p.old && p.new ? "replaced" : p.new ? "added" : "deleted";
-    out.push({ id: p.id, kind, author: p.author ?? PROOF_AUTHOR, file: p.file, line, text: p.new || p.old, old: kind === "replaced" ? p.old : undefined, comment: p.why || undefined });
+    out.push({
+      id: p.id,
+      kind,
+      author: p.author ?? PROOF_AUTHOR,
+      file: p.file,
+      line,
+      text: p.new || p.old,
+      old: kind === "replaced" ? p.old : undefined,
+      comment: p.why || undefined,
+      ...contextAround(text, at, at + p.old.length),
+    });
   }
   return out;
 }

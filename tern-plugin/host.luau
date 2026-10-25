@@ -478,6 +478,9 @@ type Change = {
 	text: string,
 	old: string?,
 	comment: string?,
+	-- A few words around the change, as the text reads (ternlatex changes --json).
+	before: string?,
+	after: string?,
 }
 type ReviewState = {
 	cx: BlockCx,
@@ -535,6 +538,8 @@ local function parse_changes(stdout: string): ({ Author }?, { Change }?)
 				text = str(c.text) or "",
 				old = str(c.old),
 				comment = str(c.comment),
+				before = str(c.before),
+				after = str(c.after),
 			})
 		end
 	end
@@ -640,14 +645,29 @@ local function change_card(state: ReviewState, c: Change, selected: boolean): No
 		source_link(state.dir, c.file, c.line),
 	}
 	local body: { Node } = {}
-	if c.kind == "replaced" and c.old then
-		table.insert(body, ui.text({ ui.span(c.old, "del"), ui.span("  →  ", "muted"), ui.span(c.text, "ins") }))
-	elseif c.kind == "deleted" then
-		table.insert(body, ui.text({ ui.span(c.text, "del") }))
-	elseif c.kind == "added" then
-		table.insert(body, ui.text({ ui.span(c.text, "ins") }))
-	else
+	if c.kind == "comment" then
 		table.insert(body, ui.text(c.text))
+	else
+		-- The change inline in its sentence, the words around it dimmed.
+		local line: { Span | string } = {}
+		if c.before then
+			table.insert(line, ui.span(c.before :: string, "dim")) -- carries its own spacing to the change
+		end
+		if c.kind == "replaced" and c.old then
+			table.insert(line, ui.span(c.old, "del"))
+			table.insert(line, " ")
+			table.insert(line, ui.span(c.text, "ins"))
+		elseif c.kind == "deleted" then
+			table.insert(line, ui.span(c.text, "del"))
+		elseif c.kind == "added" then
+			table.insert(line, ui.span(c.text, "ins"))
+		else
+			table.insert(line, c.text)
+		end
+		if c.after then
+			table.insert(line, ui.span(c.after :: string, "dim"))
+		end
+		table.insert(body, ui.text(line))
 	end
 	if c.comment then
 		table.insert(body, ui.text({ ui.span("comment: ", "muted"), ui.span(c.comment :: string, "em") }))

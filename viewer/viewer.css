@@ -424,6 +424,7 @@ body.diff-mode { --top: calc(var(--bar-h) + var(--diff-h)); }
 .snippet ins { color: var(--ins); text-decoration: none; }
 .snippet del { color: var(--del); }
 .snippet mark { background: var(--reveal); color: inherit; }
+.snippet .ctx { opacity: 0.55; }
 .item-actions { display: flex; gap: 4px; margin: 4px 0 0 12px; }
 #review-panel button.accept { color: var(--ok); }
 #review-panel button.reject { color: var(--del); }

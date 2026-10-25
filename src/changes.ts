@@ -9,6 +9,7 @@ import { loadPdfjs, PDF_DATA } from "./render.ts";
 import { type Config, CONFIG_FILE, type DocConfig, docPaths, posix, UsageError } from "./config.ts";
 import { compile } from "./engine.ts";
 import { SyncTex } from "./synctex.ts";
+import { plainText } from "./locate.ts";
 
 export type ChangeKind = "added" | "deleted" | "replaced" | "comment" | "highlight";
 
@@ -27,6 +28,9 @@ export interface Change {
   old?: string;
   /** The optional `comment=` key. */
   comment?: string;
+  /** A few words of the text just before and after the change, as the document reads them (no markup). */
+  before?: string;
+  after?: string;
 }
 
 /** Project-relative path of the generated author/option setup. */
@@ -228,6 +232,62 @@ export function parseSpans(text: string): Span[] {
   return spans;
 }
 
+/** Words of context on each side of a change. */
+const CONTEXT_WORDS = 5;
+
+/** S as it reads once its tracked changes are accepted (added, replaced and highlighted text kept; deletions and comments gone). */
+function accepted(s: string): string {
+  let out = "";
+  let at = 0;
+  for (const span of parseSpans(s)) {
+    if (span.start < at) continue; // nested inside one already taken
+    out += s.slice(at, span.start);
+    if (span.kind === "added" || span.kind === "replaced" || span.kind === "highlight") out += accepted(s.slice(span.args[0].start, span.args[0].end));
+    at = span.end;
+  }
+  return out + s.slice(at);
+}
+
+/** Commands whose argument is a key, not prose: shown in a change's context as what the reader sees in their place. */
+const KEYED = /\\(?:(?:[a-zA-Z]*[cC]ite[a-z]*)|((?:[cC]|auto|page|eq|name)?ref|label))\*?(?:\[[^\]]*\])*\{[^}]*\}/g;
+const LOGOS: Record<string, string> = { TeX: "TeX", LaTeX: "LaTeX", LaTeXe: "LaTeX2e", XeTeX: "XeTeX", BibTeX: "BibTeX" };
+
+/** S with keyed commands as placeholders ("[cite]", "[ref]", labels dropped) and TeX logos as their names. */
+function readable(s: string): string {
+  return s
+    .replace(KEYED, (_m, ref?: string) => (ref === undefined ? "[cite]" : ref === "label" ? "" : "[ref]"))
+    .replace(/\\(TeX|LaTeXe|LaTeX|XeTeX|BibTeX)\b(\{\})?/g, (_m, name: string) => LOGOS[name]);
+}
+
+/** The last (`side` "before") or first words of S as plain text, "…" marking more; undefined when there are none. */
+function words(s: string, side: "before" | "after"): string | undefined {
+  const all = plainText(readable(accepted(s))).text.trim().split(" ").filter(Boolean);
+  if (!all.length) return undefined;
+  const some = side === "before" ? all.slice(-CONTEXT_WORDS) : all.slice(0, CONTEXT_WORDS);
+  const more = all.length > some.length;
+  return side === "before" ? `${more ? "… " : ""}${some.join(" ")}` : `${some.join(" ")}${more ? " …" : ""}`;
+}
+
+/**
+ * The words around TEXT[start, end) within its paragraph (blank lines bound it), for a change's preview. Each side
+ * carries the space that separates it from the change in the source, if any, so "write." stays together.
+ */
+export function contextAround(text: string, start: number, end: number): { before?: string; after?: string } {
+  const blank = /\n[ \t]*\n/g;
+  let from = 0;
+  for (let m = blank.exec(text); m && m.index < start; m = blank.exec(text)) from = m.index + m[0].length;
+  blank.lastIndex = end;
+  const next = blank.exec(text);
+  const to = next ? next.index : text.length;
+  const before = words(text.slice(from, start), "before");
+  const after = words(text.slice(end, to), "after");
+  const gap = (c: string | undefined) => (c !== undefined && /[\s~]/.test(c) ? " " : "");
+  return {
+    before: before === undefined ? undefined : before + gap(text[start - 1]),
+    after: after === undefined ? undefined : gap(text[end]) + after,
+  };
+}
+
 interface Located { change: Change; span: Span }
 
 /** Changes in one file's text, with ids. */
@@ -254,7 +314,7 @@ export function scanText(file: string, text: string): Located[] {
     const occurrence = seen.get(key) ?? 0;
     seen.set(key, occurrence + 1);
     const id = createHash("sha1").update(`${key}\0${occurrence}`).digest("hex").slice(0, 8);
-    const change: Change = { id, kind: span.kind, author, file, line: lineOf(span.start), text: body };
+    const change: Change = { id, kind: span.kind, author, file, line: lineOf(span.start), text: body, ...contextAround(text, span.start, span.end) };
     if (old !== undefined) change.old = old;
     if (span.opts.comment) change.comment = span.opts.comment;
     return { change, span };
