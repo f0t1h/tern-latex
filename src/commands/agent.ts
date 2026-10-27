@@ -11,6 +11,11 @@ import { COMPILED, cacheDir, resolveTool, selfCommand, which } from "../tools.ts
 export interface AgentOptions {
   /** PATH for omp and everything it runs (the agent block gets the dev server's PATH this way). */
   path?: string;
+  /**
+   * An omp session to restore (`omp --restore`: resume it and finish what its last process left unfinished). Tern
+   * passes it when it brings the omp block back after Tern or the machine restarted.
+   */
+  restore?: string;
 }
 
 /**
@@ -66,7 +71,8 @@ export async function runAgent(target: string, o: AgentOptions = {}): Promise<nu
   const extension = await ompExtension();
   const model = await assistantModel(cfg.dir, cfg);
   const [omp, ...pre] = (await resolveTool("omp", cfg)).command;
-  const child = spawn(omp, [...pre, "--continue", ...(model ? ["--model", model] : []), "-e", extension], { cwd: cfg.dir, stdio: "inherit", env: process.env });
+  const session = o.restore ? ["--restore", o.restore] : ["--continue"];
+  const child = spawn(omp, [...pre, ...session, ...(model ? ["--model", model] : []), "-e", extension], { cwd: cfg.dir, stdio: "inherit", env: process.env });
   const { promise, resolve: done } = Promise.withResolvers<number>();
   child.on("error", (e) => {
     console.error(`ternlatex: cannot start ${omp}: ${e.message} (set TERNLATEX_OMP to the omp executable)`);

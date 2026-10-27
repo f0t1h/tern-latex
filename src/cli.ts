@@ -202,8 +202,9 @@ async function main(argv: string[]): Promise<number> {
       return lint(positionals);
     }
     case "agent": {
-      const { values, positionals } = parseArgs({ args: rest, allowPositionals: true, options: { path: { type: "string" } } });
-      return runAgent(positionals[0] ?? ".", { path: values.path });
+      // Tern appends `--restore <session.jsonl>` when it brings an omp block back after a restart.
+      const { values, positionals } = parseArgs({ args: rest, allowPositionals: true, options: { path: { type: "string" }, restore: { type: "string" } } });
+      return runAgent(positionals[0] ?? ".", { path: values.path, restore: values.restore });
     }
     case "tool":
       return tool(rest);
