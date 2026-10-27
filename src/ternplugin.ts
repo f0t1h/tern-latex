@@ -371,9 +371,23 @@ const REPLY_FLAGS = ["needsViewer", "needsEditor", "needsAgent", "above"] as con
 
 /**
  * Asks the plugin's window half (the window this process runs in) to run `op`: writes a request file into the
- * IPC directory and `tern open`s it; the plugin's route claims it and writes the reply.
+ * IPC directory and `tern open`s it; the plugin's route claims it and writes the reply. When nothing claims it, the
+ * window half is not running: Tern disables a plugin whose load overran its budget until the next reload, which
+ * happens when a login after a restart keeps the machine busy. Plugins are then reloaded once and the request sent
+ * again.
  */
 export async function pluginCall(op: string, args: Record<string, unknown>, o: { timeoutMs?: number } = {}): Promise<PluginReply> {
+  const first = await sendRequest(op, args, o.timeoutMs);
+  if (first !== null) return first;
+  const reload = await ternCli(["plugin", "reload"]);
+  if (reload.code !== 0) throw ternError(["plugin", "reload"], reload);
+  const again = await sendRequest(op, args, o.timeoutMs);
+  if (again !== null) return again;
+  throw new Error("the ternlatex Tern plugin did not take the request, even after reloading Tern's plugins; run `ternlatex setup-tern`");
+}
+
+/** One request (see pluginCall): its reply, or null when no plugin claimed it. */
+async function sendRequest(op: string, args: Record<string, unknown>, timeoutMs = 10_000): Promise<PluginReply | null> {
   const ipc = ipcDir();
   const id = randomUUID();
   const request = join(ipc, `${id}.ternlatex`);
@@ -385,10 +399,10 @@ export async function pluginCall(op: string, args: Record<string, unknown>, o: {
     const r = await ternCli(["open", request], env);
     // A claimed open exits 1 with this message: the request reached the plugin.
     if (r.code !== 1 || !r.stderr.includes("cannot open in a file block")) {
-      if (r.code === 0) throw new Error("the ternlatex Tern plugin did not take the request; run `ternlatex setup-tern`");
+      if (r.code === 0) return null;
       throw ternError(["open", request], r);
     }
-    return await awaitReply(reply, o.timeoutMs ?? 10_000);
+    return await awaitReply(reply, timeoutMs);
   } finally {
     // The plugin deletes the request once read; either is left over when something went wrong.
     await Promise.all([rm(request, { force: true }), rm(reply, { force: true })]);

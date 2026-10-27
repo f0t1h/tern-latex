@@ -2122,14 +2122,19 @@ tern.carly.export("refs_search", {
 	return carly_run(cx, call, { "refs", "search", query }, printed)
 end)
 
+-- Under Carly's tight per-call budget: no ternlatex.toml walk (slow on a busy or networked disk), only the dev block
+-- of the focused tab and the project record ternlatex dev keeps for it.
 tern.carly.context(function(cx: WindowCx): string?
 	local id = cx.session:focused()
 	local tab = if id then cx.session:tab_of(id) else nil
-	local dir = focused_project(cx)
-	if dir == nil then
+	local dev = if tab then tab_dev[tab] else nil
+	if dev == nil then
 		return nil
 	end
-	local dev = if tab then tab_dev[tab] else nil
-	local text = "ternlatex project " .. dir .. (if dev then " · " .. dev.text else "")
-	return string.sub(text, 1, 400)
+	for _, rec in load_projects() do
+		if cx.session:tab_of(rec.dev) == tab then
+			return string.sub("ternlatex project " .. rec.dir .. " · " .. dev.text, 1, 400)
+		end
+	end
+	return nil
 end)

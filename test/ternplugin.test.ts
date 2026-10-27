@@ -48,6 +48,7 @@ if (cmd === "plugin") {
   else if (verb === "unlink") { rmSync(link); out({ removed: link }); }
   else if (verb === "remove") { rmSync(copy, { recursive: true }); out({ removed: copy }); }
   else if (verb === "list" || verb === "reload") {
+    if (verb === "reload") writeFileSync(join(dir, "reloaded"), "");
     const loaded = existsSync(link) || existsSync(copy);
     out({ plugins: loaded && !state.problem ? [{ id: "ternlatex", status: state.status ?? "ready" }] : [], problems: state.problem ? [state.problem] : [], jit: false, canvas: true });
     process.exit(verb === "reload" && state.status && state.status !== "ready" ? 1 : 0);
@@ -66,6 +67,7 @@ if (cmd === "split" || cmd === "move") {
 if (cmd === "open") {
   const claimed = () => { process.stderr.write("tern open: " + verb + " cannot open in a file block\\n"); process.exit(1); };
   if (state.open === "unclaimed") process.exit(0);
+  if (state.open === "untilReload" && !existsSync(join(dir, "reloaded"))) process.exit(0);
   if (state.open === "broken") { process.stderr.write("tern open: no window shows pane 1\\n"); process.exit(2); }
   if (state.open === "silent") claimed();
   const req = JSON.parse(readFileSync(verb, "utf8"));
@@ -89,7 +91,7 @@ interface FakeState {
   noPlugins?: boolean;
   status?: unknown;
   problem?: { dir: string; error: string };
-  open?: "reply" | "silent" | "unclaimed" | "broken";
+  open?: "reply" | "silent" | "unclaimed" | "untilReload" | "broken";
   reply?: unknown;
   replies?: unknown[];
 }
@@ -97,6 +99,7 @@ interface FakeState {
 function setState(s: Partial<FakeState>): void {
   writeFileSync(join(fake, "state.json"), JSON.stringify({ plugins: join(root, "plugins"), open: "reply", reply: { ok: true, pane: 7 }, ...s }));
   rmSync(join(fake, "log"), { force: true });
+  rmSync(join(fake, "reloaded"), { force: true });
   rmSync(join(fake, "requests"), { force: true });
   rmSync(join(fake, "opens"), { force: true });
 }
@@ -308,9 +311,17 @@ describe("pluginCall", () => {
 
   test("an open nobody claimed, or a failing tern, is an error", async () => {
     setState({ open: "unclaimed" });
-    await expect(pluginCall("review", { dir: "/p" })).rejects.toThrow(/did not take the request.*setup-tern/);
+    await expect(pluginCall("review", { dir: "/p" })).rejects.toThrow(/did not take the request, even after reloading.*setup-tern/);
     setState({ open: "broken" });
     await expect(pluginCall("review", { dir: "/p" })).rejects.toThrow("no window shows pane 1");
+    expect(leftovers()).toEqual([]);
+  });
+
+  test("a window half Tern disabled (its load overran after a restart) is brought back by one plugin reload", async () => {
+    setState({ open: "untilReload", reply: { ok: true, pane: 7 } });
+    expect(await pluginCall("review", { dir: "/p" })).toEqual({ pane: 7 });
+    const log = readFileSync(join(fake, "log"), "utf8").trim().split("\n").map((l) => JSON.parse(l)[0] + " " + JSON.parse(l)[1]);
+    expect(log.filter((l) => l === "plugin reload")).toHaveLength(1);
     expect(leftovers()).toEqual([]);
   });
 });
