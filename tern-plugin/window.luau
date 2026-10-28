@@ -1575,6 +1575,350 @@ local function edit_link(verb: string, id: string, cx: WindowCx)
 end
 
 ---------------------------------------------------------------------------
+-- LaTeX editing: wrap the selection (or the caret) in a command, inline math
+-- or an environment, in the live buffer of the focused `.tex` file block.
+-- Tern gives plugins no editing calls for file blocks, so the buffer is read,
+-- written back whole (it stays unsaved), and the caret put back with a
+-- `#L<line>C<col>` open, which places it in the existing block.
+
+-- What an edit makes of the buffer: the new text and the 0-based byte offset
+-- for the caret, or nil and why it cannot.
+type Change = (text: string, s: number, e: number) -> (string?, number | string)
+
+-- The focused block when it is a `.tex` file (no project needed).
+local function focused_tex_file(cx: WindowCx): PaneInfo?
+	local pane = focused_pane(cx)
+	if pane ~= nil and pane.kind == "file" and pane.path ~= nil and ends(pane.path :: string, ".tex") then
+		return pane
+	end
+	return nil
+end
+
+-- Applies `change` to the selection of `pane` (0-based byte offsets s..e, the
+-- caret when nothing is selected) and puts the caret where it says.
+local function edit_buffer(cx: WindowCx, pane: PaneInfo, what: string, change: Change)
+	local path = pane.path :: string
+	local at, a, b = caret(cx, pane.pane)
+	cx.docs:read(path):next(function(text, err, c)
+		local fresh = c :: WindowCx
+		if err or type(text) ~= "string" then
+			fresh:toast("error", what .. " failed", err or ("cannot read " .. path))
+			return
+		end
+		local s, e = a, b
+		if s == nil or e == nil then
+			local o = offset_of(text, at.line, at.col)
+			if o == nil then
+				fresh:toast("error", what .. " failed", "the caret's line is gone")
+				return
+			end
+			s, e = o - 1, o - 1
+		end
+		local new, where = change(text, s :: number, e :: number)
+		if new == nil then
+			fresh:toast("error", what .. " failed", tostring(where))
+			return
+		end
+		fresh.docs:write(path, new):next(function(_range, werr, c2)
+			local after = c2 :: WindowCx
+			if werr then
+				after:toast("error", what .. " failed", werr)
+				return
+			end
+			local to = spot_at(new :: string, where :: number)
+			after:open(path .. "#L" .. to.line .. "C" .. to.col)
+		end)
+	end)
+end
+
+-- Wraps s..e in `open`/`close` (selection without its outer whitespace), or
+-- unwraps it when the markup is already there (around or inside the
+-- selection); with no selection, inserts both with the caret between.
+local function wrapping(open: string, close: string): Change
+	return function(text: string, s: number, e: number): (string?, number | string)
+		while e > s and string.find(string.sub(text, e, e), "^%s$") do
+			e -= 1
+		end
+		while e > s and string.find(string.sub(text, s + 1, s + 1), "^%s$") do
+			s += 1
+		end
+		local before, inner, after = string.sub(text, 1, s), string.sub(text, s + 1, e), string.sub(text, e + 1)
+		if e == s then
+			return before .. open .. close .. after, s + #open
+		end
+		if ends(before, open) and string.sub(after, 1, #close) == close then
+			return string.sub(before, 1, #before - #open) .. inner .. string.sub(after, #close + 1), s - #open + #inner
+		end
+		if #inner >= #open + #close and string.sub(inner, 1, #open) == open and ends(inner, close) then
+			local bare = string.sub(inner, #open + 1, #inner - #close)
+			return before .. bare .. after, s + #bare
+		end
+		return before .. open .. inner .. close .. after, s + #open + #inner + #close
+	end
+end
+
+-- Environments whose lines are list items: wrapping adds `\item` where a line has none.
+local LIST_ENVS: { [string]: boolean } = { itemize = true, enumerate = true, description = true }
+
+-- Wraps the whole lines of s..e (the caret's line when nothing is selected)
+-- in `\begin{name}`…`\end{name}`, the body indented two spaces; on a blank
+-- line, inserts an empty environment with the caret inside.
+local function environment(name: string): Change
+	return function(text: string, s: number, e: number): (string?, number | string)
+		if e > s and string.sub(text, e, e) == "\n" then
+			e -= 1 -- a selection of whole lines ends at the next line's start
+		end
+		local start = string.match(string.sub(text, 1, s), "^.*()\n") or 0
+		local nl = string.find(text, "\n", e + 1, true)
+		local stop = if nl then nl - 1 else #text
+		local block = string.sub(text, start + 1, stop)
+		local indent = string.match(block, "^[ \t]*") or ""
+		local list = LIST_ENVS[name] == true
+		local first = indent .. "\\begin{" .. name .. "}\n"
+		local last = indent .. "\\end{" .. name .. "}"
+		if string.find(block, "^%s*$") then
+			local middle = indent .. "  " .. (if list then "\\item " else "")
+			local new = string.sub(text, 1, start) .. first .. middle .. "\n" .. last .. string.sub(text, stop + 1)
+			return new, start + #first + #middle
+		end
+		local body: { string } = {}
+		for line in string.gmatch(block .. "\n", "(.-)\n") do
+			if string.find(line, "^%s*$") then
+				table.insert(body, line)
+			else
+				local lead, rest = string.match(line, "^([ \t]*)(.*)$")
+				if list and string.sub(rest :: string, 1, 5) ~= "\\item" then
+					rest = "\\item " .. (rest :: string)
+				end
+				table.insert(body, "  " .. (lead :: string) .. (rest :: string))
+			end
+		end
+		local wrapped = first .. table.concat(body, "\n") .. "\n" .. last
+		return string.sub(text, 1, start) .. wrapped .. string.sub(text, stop + 1), start + #wrapped
+	end
+end
+
+-- Keys `Use LaTeX editing keys` binds in the user's keybinds (a plugin may not
+-- bind keys Tern's defaults use). ⌘ never reaches terminal programs; elsewhere
+-- Ctrl+Shift keeps Ctrl+B and Ctrl+I for them.
+type EditKey = { chord: string, id: string, title: string }
+local EDIT_KEYS: { EditKey } = if MACOS
+	then {
+		{ chord = "cmd+b", id = "bold", title = "bold" },
+		{ chord = "cmd+i", id = "emph", title = "emphasis" },
+		{ chord = "cmd+shift+m", id = "math", title = "inline math" },
+		{ chord = "cmd+shift+e", id = "environment", title = "environment" },
+	}
+	else {
+		{ chord = "ctrl+shift+b", id = "bold", title = "bold" },
+		{ chord = "ctrl+shift+i", id = "emph", title = "emphasis" },
+		{ chord = "ctrl+shift+m", id = "math", title = "inline math" },
+		{ chord = "ctrl+shift+e", id = "environment", title = "environment" },
+	}
+local EDIT_KEYS_KV = "edit_keys"
+
+-- What `Use LaTeX editing keys` bound, by command id: the chord, the user's own
+-- binding of it before (restored on removal), and the action the key ran
+-- outside view-specific contexts (it runs it outside `.tex` files: a plugin
+-- action in a key's list always takes the key, wherever focus is).
+type EditKeyRecord = { chord: string, previous: any, fallback: string? }
+local edit_keys: { [string]: EditKeyRecord }? = nil
+
+local function load_edit_keys(): { [string]: EditKeyRecord }
+	if edit_keys == nil then
+		local out: { [string]: EditKeyRecord } = {}
+		local ok, data = pcall(tern.kv.get, EDIT_KEYS_KV)
+		if ok and type(data) == "table" then
+			for id, rec in data do
+				if type(id) == "string" and type(rec) == "table" and type(rec.chord) == "string" then
+					out[id] = { chord = rec.chord, previous = rec.previous, fallback = if type(rec.fallback) == "string" then rec.fallback else nil }
+				end
+			end
+		end
+		edit_keys = out
+	end
+	return edit_keys :: { [string]: EditKeyRecord }
+end
+
+-- Outside `.tex` files a LaTeX editing key runs what it did before (the key's
+-- global action, quietly): its ternlatex action takes the key wherever focus is.
+local function key_fallback(cx: WindowCx, id: string)
+	local rec = load_edit_keys()[id]
+	if rec and rec.fallback then
+		cx:action(rec.fallback :: string)
+	end
+end
+
+-- Runs edit `change` on the focused `.tex` file, else key_fallback.
+local function latex_edit(cx: WindowCx, id: string, what: string, change: Change)
+	local pane = focused_tex_file(cx)
+	if pane == nil then
+		key_fallback(cx, id)
+		return
+	end
+	edit_buffer(cx, pane, what, change)
+end
+
+type WrapCommand = { id: string, title: string, open: string, close: string }
+local WRAP_COMMANDS: { WrapCommand } = {
+	{ id = "bold", title = "Bold (\\textbf)", open = "\\textbf{", close = "}" },
+	{ id = "emph", title = "Emphasis (\\emph)", open = "\\emph{", close = "}" },
+	{ id = "monospace", title = "Monospace (\\texttt)", open = "\\texttt{", close = "}" },
+	{ id = "math", title = "Inline math ($…$)", open = "$", close = "$" },
+}
+
+for _, w in WRAP_COMMANDS do
+	tern.command({
+		id = w.id,
+		title = w.title,
+		group = GROUP,
+		available = tex_available,
+		run = function(cx: WindowCx)
+			latex_edit(cx, w.id, w.title, wrapping(w.open, w.close))
+		end,
+	})
+end
+
+local ENVIRONMENTS = { "itemize", "enumerate", "description", "equation", "equation*", "align", "align*", "figure", "table", "center", "quote", "abstract", "proof", "minipage" }
+local OTHER_ENVIRONMENT = "Other…"
+
+tern.command({
+	id = "environment",
+	title = "Wrap in environment…",
+	group = GROUP,
+	available = tex_available,
+	run = function(cx: WindowCx)
+		if focused_tex_file(cx) == nil then
+			key_fallback(cx, "environment")
+			return
+		end
+		local items: { PickItem } = {}
+		for _, name in ENVIRONMENTS do
+			table.insert(items, { label = name })
+		end
+		table.insert(items, { label = OTHER_ENVIRONMENT, detail = "type a name" })
+		local function wrap_in(c: WindowCx, name: string)
+			local pane = focused_tex_file(c)
+			if pane and string.find(name, "^[%a@]+%*?$") then
+				edit_buffer(c, pane, "Wrap in " .. name, environment(name))
+			elseif pane then
+				c:toast("error", "Not wrapped", "“" .. name .. "” is not an environment name")
+			end
+		end
+		cx:pick({ items = items, placeholder = "Wrap the selected lines in…", action = "wrap" }):next(function(item, _err, c0)
+			local c1 = c0 :: WindowCx
+			if item == nil then
+				return
+			end
+			if item.label ~= OTHER_ENVIRONMENT then
+				wrap_in(c1, item.label)
+				return
+			end
+			c1:prompt({ placeholder = "Environment name, e.g. theorem", action = "wrap" }):next(function(name, _e, c2)
+				if type(name) == "string" and name ~= "" then
+					wrap_in(c2 :: WindowCx, (string.gsub(name, "^%s*(.-)%s*$", "%1")))
+				end
+			end)
+		end)
+	end,
+})
+
+-- A chord as `cx.actions:keys()` spells it: modifiers in Tern's order
+-- (ctrl, alt, shift, cmd: "shift+cmd+m", "alt+cmd+1"), then the key.
+local MODIFIER_ORDER: { [string]: number } = { ctrl = 1, alt = 2, shift = 3, cmd = 4 }
+local function keymap_chord(chord: string): string
+	local parts = string.split(chord, "+")
+	local key = table.remove(parts) :: string
+	table.sort(parts, function(a: string, b: string): boolean
+		return (MODIFIER_ORDER[a] or 9) < (MODIFIER_ORDER[b] or 9)
+	end)
+	table.insert(parts, key)
+	return table.concat(parts, "+")
+end
+
+-- ⌘⇧M on macOS, Ctrl+Shift+M elsewhere.
+local function chord_label(chord: string): string
+	local names: { [string]: string } = if MACOS
+		then { cmd = "⌘", shift = "⇧", alt = "⌥", ctrl = "⌃" }
+		else { cmd = "Super+", shift = "Shift+", alt = "Alt+", ctrl = "Ctrl+" }
+	local out = ""
+	local parts = string.split(chord, "+")
+	for i, p in parts do
+		out ..= if i == #parts then string.upper(p) else (names[p] or (p .. "+"))
+	end
+	return out
+end
+
+tern.command({
+	id = "edit-keys-on",
+	title = "Use LaTeX editing keys",
+	group = GROUP,
+	available = function(_cx: WindowCx): boolean
+		return not IOS and next(load_edit_keys()) == nil
+	end,
+	run = function(cx: WindowCx)
+		local effective = cx.actions:keys()
+		local overrides = cx.settings:keybinds()
+		local saved: { [string]: EditKeyRecord } = {}
+		local bound: { string } = {}
+		local skipped: { string } = {}
+		for _, k in EDIT_KEYS do
+			local action = "plugin.ternlatex." .. k.id
+			local list: { string } = {}
+			local fallback: string? = nil
+			local clash: string? = nil
+			for _, a in effective[keymap_chord(k.chord)] or {} do
+				if string.sub(a, 1, 5) == "edit." or string.sub(a, 1, 7) == "editor." or string.sub(a, 1, 7) == "plugin." then
+					clash = a -- it would win in file blocks, or (a plugin's) everywhere
+				elseif string.find(a, ".", 1, true) then
+					table.insert(list, a) -- another view's (markdown.bold, git.new_branch): it keeps the key there
+				elseif fallback == nil then
+					fallback = a -- the key's global action (toggle_sidebar): ternlatex runs it outside .tex files
+				end
+			end
+			if clash then
+				table.insert(skipped, chord_label(k.chord) .. " (" .. clash .. ")")
+			else
+				table.insert(list, action)
+				saved[k.id] = { chord = k.chord, previous = overrides[k.chord], fallback = fallback }
+				cx.settings:bind(k.chord, list)
+				table.insert(bound, chord_label(k.chord) .. " " .. k.title)
+			end
+		end
+		pcall(tern.kv.set, EDIT_KEYS_KV, saved)
+		edit_keys = saved
+		local sub = table.concat(bound, " · ") .. " in .tex files; elsewhere the keys work as before."
+		if #skipped > 0 then
+			sub ..= " Left alone, already in use: " .. table.concat(skipped, ", ") .. "."
+		end
+		cx:toast("success", "LaTeX editing keys on", sub)
+	end,
+})
+
+tern.command({
+	id = "edit-keys-off",
+	title = "Remove LaTeX editing keys",
+	group = GROUP,
+	available = function(_cx: WindowCx): boolean
+		return not IOS and next(load_edit_keys()) ~= nil
+	end,
+	run = function(cx: WindowCx)
+		local map = table.clone(cx.settings:keybinds())
+		for id, rec in load_edit_keys() do
+			local current = map[rec.chord]
+			-- Only a binding that still holds ternlatex's action: a key the user rebound since stays theirs.
+			if type(current) == "table" and table.find(current, "plugin.ternlatex." .. id) then
+				map[rec.chord] = rec.previous
+			end
+		end
+		cx.settings:set("keybinds", map)
+		pcall(tern.kv.set, EDIT_KEYS_KV, {})
+		edit_keys = {}
+		cx:toast("success", "LaTeX editing keys off", "The keys are back to what they did before.")
+	end,
+})
+
+---------------------------------------------------------------------------
 -- Review and outline blocks Tern's "Open with" menu started on a `.tex`
 -- file announce themselves as `ternlatex://block/<id>`: the window keeps one
 -- per project, as its own commands do.

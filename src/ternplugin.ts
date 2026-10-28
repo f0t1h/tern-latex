@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { parse as parseToml } from "smol-toml";
@@ -70,6 +70,66 @@ export function ternStateDir(): string {
 /** The plugin's data folder (`<state>/plugin-data/ternlatex`); Tern keeps it when the plugin is removed. */
 export function pluginDataDir(): string {
   return join(ternStateDir(), "plugin-data", PLUGIN_ID);
+}
+
+/** Tern's configuration directory (`<config>`), holding settings.json: TERN_CONFIG_DIR when set, else the OS location. */
+export function ternConfigDir(): string {
+  const env = process.env.TERN_CONFIG_DIR;
+  if (env) return resolve(env);
+  if (process.platform === "darwin") return join(homedir(), "Library", "Application Support", "Tern");
+  if (process.platform === "win32") return join(process.env.APPDATA || join(homedir(), "AppData", "Roaming"), "Tern");
+  return join(process.env.XDG_CONFIG_HOME || join(homedir(), ".config"), "tern");
+}
+
+/** A key the plugin's "Use LaTeX editing keys" bound (its kv.json `edit_keys`), with the user's own binding before. */
+export interface EditKey {
+  chord: string;
+  action: string;
+  previous?: unknown;
+}
+
+/** The keys "Use LaTeX editing keys" bound that Tern's settings.json still holds as it left them. */
+export function editKeys(): EditKey[] {
+  const kv = join(pluginDataDir(), "kv.json");
+  const settings = join(ternConfigDir(), "settings.json");
+  if (!existsSync(kv) || !existsSync(settings)) return [];
+  const saved = jsonObject(readFileSync(kv, "utf8"))?.edit_keys;
+  const keybinds = jsonObject(readFileSync(settings, "utf8"))?.keybinds;
+  if (!isObject(saved) || !isObject(keybinds)) return [];
+  return Object.entries(saved).flatMap(([id, rec]) => {
+    if (!isObject(rec) || typeof rec.chord !== "string") return [];
+    const action = `plugin.${PLUGIN_ID}.${id}`;
+    const bound = keybinds[rec.chord];
+    // A key the user rebound since is theirs.
+    return Array.isArray(bound) && bound.includes(action) ? [{ chord: rec.chord, action, previous: rec.previous }] : [];
+  });
+}
+
+/** Puts the keys of `editKeys()` back in Tern's settings.json: the user's earlier binding, else Tern's default. */
+export async function restoreEditKeys(keys: EditKey[]): Promise<void> {
+  const file = join(ternConfigDir(), "settings.json");
+  const settings = jsonObject(await readFile(file, "utf8"));
+  if (!settings || !isObject(settings.keybinds)) return;
+  for (const k of keys) {
+    if (k.previous === undefined || k.previous === null) delete settings.keybinds[k.chord];
+    else settings.keybinds[k.chord] = k.previous;
+  }
+  const tmp = `${file}.${process.pid}.tmp`;
+  await writeFile(tmp, `${JSON.stringify(settings, null, 2)}\n`);
+  await rename(tmp, file);
+}
+
+function isObject(v: unknown): v is Record<string, unknown> {
+  return Boolean(v) && typeof v === "object" && !Array.isArray(v);
+}
+
+function jsonObject(text: string): Record<string, unknown> | null {
+  try {
+    const v: unknown = JSON.parse(text);
+    return isObject(v) ? v : null;
+  } catch {
+    return null;
+  }
 }
 
 /**

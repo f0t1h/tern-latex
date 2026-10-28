@@ -3,7 +3,7 @@ import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { UsageError } from "../config.ts";
-import { findTernPlugin, pluginDataDir, removeTernPlugin } from "../ternplugin.ts";
+import { editKeys, findTernPlugin, pluginDataDir, removeTernPlugin, restoreEditKeys, ternConfigDir } from "../ternplugin.ts";
 import { cacheDir, dataDir } from "../tools.ts";
 import { CHECKPOINT_REF } from "../vcs.ts";
 import { isLauncher } from "./agent.ts";
@@ -81,6 +81,15 @@ async function findItems(keepCache: boolean): Promise<UninstallItem[]> {
   if (!keepCache && existsSync(cache)) items.push({ what: "cache (tools, TeX packages)", path: cache, bytes: diskSize(cache), remove: removeDir(cache) });
   const data = dataDir();
   if (existsSync(data)) items.push({ what: "data", path: data, bytes: diskSize(data), remove: removeDir(data) });
+  // Before the plugin data, which records what the keys were.
+  const keys = editKeys();
+  if (keys.length) {
+    items.push({
+      what: "Tern keybindings (LaTeX editing keys)",
+      path: `${keys.map((k) => k.chord).join(", ")} in ${join(ternConfigDir(), "settings.json")}`,
+      remove: () => restoreEditKeys(keys),
+    });
+  }
   const pluginData = pluginDataDir();
   if (existsSync(pluginData)) items.push({ what: "Tern plugin data", path: pluginData, bytes: diskSize(pluginData), remove: removeDir(pluginData) });
   const plugin = await findTernPlugin();

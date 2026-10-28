@@ -619,6 +619,27 @@ describe("uninstall", () => {
     expect(r.out).toContain("refs/ternlatex/checkpoints");
   });
 
+  test("keys from Use LaTeX editing keys go back to the user's earlier binding or Tern's default; ones rebound since stay", () => {
+    installEverything();
+    const kv = at("tern-state", "plugin-data", "ternlatex", "kv.json");
+    writeFileSync(kv, JSON.stringify({ edit_keys: { bold: { chord: "cmd+b", fallback: "toggle_sidebar" }, emph: { chord: "cmd+i", previous: "palette" }, math: { chord: "cmd+shift+m" } } }));
+    const settings = at("tern-state", "settings.json");
+    const user = {
+      theme: "dark",
+      keybinds: {
+        "cmd+b": ["markdown.bold", "plugin.ternlatex.bold"],
+        "cmd+i": ["markdown.italic", "plugin.ternlatex.emph"],
+        "cmd+shift+m": "new_note", // rebound by the user after ternlatex bound it
+        "cmd+k": "palette",
+      },
+    };
+    writeFileSync(settings, JSON.stringify(user));
+    const r = run(["uninstall", "--yes"]);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain(`Tern keybindings (LaTeX editing keys)  cmd+b, cmd+i in ${settings}`);
+    expect(JSON.parse(readFileSync(settings, "utf8"))).toEqual({ theme: "dark", keybinds: { "cmd+i": "palette", "cmd+shift+m": "new_note", "cmd+k": "palette" } });
+  });
+
   test("a ternlatex running from the Tern-installed plugin folder removes that folder last and finishes", () => {
     const repo = join(import.meta.dir, "..");
     mkdirSync(installed);

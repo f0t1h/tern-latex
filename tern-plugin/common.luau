@@ -83,7 +83,9 @@ end
 -- Whether `config` runs this source package's ternlatex: Bun and its
 -- cli.ts (Windows paths compare case-insensitively), at the manifest's
 -- version, with the dependencies installed beside it (a reinstalled package
--- of the same version has none until the setup runs again).
+-- of the same version has none until the setup runs again). ternlatex names
+-- its cli.ts as Bun resolved it: on macOS /tmp, /var and /etc are links to
+-- /private/…, so a package under them compares without that prefix.
 function common.runs_this(config: Config): boolean
 	if #config.bin ~= 2 or not tern.fs.exists("node_modules") then
 		return false
@@ -91,6 +93,17 @@ function common.runs_this(config: Config): boolean
 	local cli, own = common.normalize(config.bin[2]), common.normalize(common.cli())
 	if tern.runtime.os == "windows" then
 		cli, own = string.lower(cli), string.lower(own)
+	elseif tern.runtime.os == "macos" then
+		local function unprivate(p: string): string
+			for _, top in { "tmp", "var", "etc" } do
+				local linked = "/private/" .. top
+				if p == linked or string.sub(p, 1, #linked + 1) == linked .. "/" then
+					return string.sub(p, #"/private" + 1)
+				end
+			end
+			return p
+		end
+		cli, own = unprivate(cli), unprivate(own)
 	end
 	return cli == own and config.version == common.version()
 end

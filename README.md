@@ -79,7 +79,8 @@ differ.
 Run `ternlatex uninstall`, or **Uninstall ternlatex** in Tern's palette. It lists what it will remove, with
 sizes, and asks first: the Tern plugin and its data folder, the `ternlatex` command **Add ternlatex to
 PATH** (or `install-cli`) put on your `PATH`, a `bun add -g` install, the cache (tools and TeX packages)
-and ternlatex's data folder. `--keep-cache` keeps the cache; `--yes` skips the question.
+and ternlatex's data folder. Keys **Use LaTeX editing keys** bound go back to what they were.
+`--keep-cache` keeps the cache; `--yes` skips the question.
 
 Projects are left as they are. Each keeps `ternlatex.toml`, `build/` and the `refs/ternlatex/checkpoints`
 git ref; `ternlatex uninstall` ends with the commands that remove them. A running `ternlatex dev` keeps
@@ -187,6 +188,17 @@ Editor keys work in a `.tex` file block of a ternlatex project:
 `ternlatex dev` prints these keys at start, and the viewer's **?** lists them. If another Tern action
 already holds a key, a toast names it; bind the ternlatex command to another key in Settings ›
 Keybindings. A key taken by another app system-wide does nothing; bind another one.
+
+**LaTeX formatting** works in any `.tex` file block, from the palette: **Bold (\textbf)**, **Emphasis
+(\emph)**, **Monospace (\texttt)** and **Inline math ($…$)** wrap the selection (or insert the pair with
+the caret inside); on text that already has that markup they remove it. **Wrap in environment…** puts
+the selected lines (or the caret's line) inside `\begin{…}`…`\end{…}`, adding `\item` for lists; on a
+blank line it inserts an empty one. Each edit is one undo step and leaves the file unsaved, like typing.
+
+**Use LaTeX editing keys** (palette) binds ⌘B bold, ⌘I emphasis, ⌘⇧M inline math and ⌘⇧E environment
+(Ctrl+Shift+B, I, M, E on Windows and Linux) in your Tern keybindings. Tern itself uses ⌘B and ⌘I
+elsewhere: Markdown, Git and SQLite views keep them, and anywhere else ⌘B still toggles the sidebar.
+**Remove LaTeX editing keys** puts every key back as it was.
 
 Type `ternlatex` in the palette for every command, including **Review changes**, **Fix build errors with
 omp**, **Show PDF viewer** and **Reset layout sizes**.
