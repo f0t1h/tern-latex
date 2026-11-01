@@ -119,6 +119,10 @@ export interface ShowParams {
   at: string;
   doc?: string;
 }
+export interface SearchParams {
+  query: string;
+  doc?: string;
+}
 
 const CONTEXT = readFileSync(join(import.meta.dir, "AGENTS.md"), "utf8");
 
@@ -234,6 +238,25 @@ export default function ternlatex(pi: ExtensionAPI): void {
       const r = await run(ctx, ["show", params.at, ...(params.doc ? ["--doc", params.doc] : [])], signal);
       if (r.code !== 0) throw new Error((r.stderr || r.stdout).trim() || `ternlatex show exited ${r.code}`);
       return { content: [text(r.stdout.trim() || `showing ${params.at}`)] };
+    },
+  });
+
+  pi.registerTool<SearchParams>({
+    name: "latex_search",
+    label: "Search PDF and source",
+    description:
+      "Find where words are in the built PDF and in the LaTeX prose (no preamble, comments, math, labels or file names), fuzzily: typos, accents, hyphenation and markup between words don't matter. One line per place: `p.N  file:line  …context[match]context…`, marked `(source only)` or `(pdf only)` when not in both. Use it when the user quotes or paraphrases the PDF (\"the sentence about X on page 3\") or names text you must locate across files; use grep for macros, labels and code.",
+    parameters: z.object({
+      query: z.string().describe("words to find, as they read in the PDF"),
+      doc: z.string().optional().describe("document name from ternlatex.toml when the project has several"),
+    }),
+    approval: "read",
+    loadMode: "essential",
+    async execute(_id, params, signal, _onUpdate, ctx) {
+      const r = await run(ctx, ["search", ...(params.doc ? ["--doc", params.doc] : []), "--", params.query], signal);
+      if (r.code > 1) throw new Error((r.stderr || r.stdout).trim() || `ternlatex search exited ${r.code}`);
+      const out = [r.stdout.trim(), r.stderr.trim()].filter(Boolean).join("\n");
+      return { content: [text(out || `no place matches "${params.query}"`)], details: { found: r.code === 0 } };
     },
   });
 }

@@ -370,9 +370,10 @@ Or ask omp: `/skill:cite the 2020 Smith paper on X here`. `ternlatex refs sync`,
 ### omp skills and tools
 
 The omp block ternlatex opens loads ternlatex's omp extension (`omp -e`), so nothing is written into your
-project for omp. It gives omp the project rules, eight skills, and three tools for the edit loop:
-`latex_build` (build and read the diagnostics), `latex_snapshot` (look at a rendered page) and `latex_show`
-(scroll your viewer to a line). Projects set up by ternlatex 0.1 had these rules and skills as files in
+project for omp. It gives omp the project rules, eight skills, and four tools: `latex_build` (build and
+read the diagnostics), `latex_snapshot` (look at a rendered page), `latex_show` (scroll your viewer to a
+line) and `latex_search` (the viewer's search, so "the sentence about X on page 3" leads omp to the right
+`file:line`). Projects set up by ternlatex 0.1 had these rules and skills as files in
 `.omp/`; the omp block removes those copies the first time it starts.
 
 | Skill | Does |

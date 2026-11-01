@@ -17,6 +17,7 @@ Run `ternlatex docs` to see them. Each document builds to `build/<name>.pdf`; a 
 - `latex_build` (`doc`, `force` optional): build every document, or one, through the dev server if running. Returns `file:line: severity: message` lines.
 - `latex_snapshot` (`page` or `at` = FILE:LINE, `doc` optional): render a page of the built PDF and return it as an image. `at` renders the page that line lands on.
 - `latex_show` (`at` = FILE:LINE, `doc` optional): scroll the user's viewer to that spot (switching document if needed) and highlight it.
+- `latex_search` (`query`, `doc` optional): where words are in the built PDF and the LaTeX prose, typos and markup tolerated: `p.N  file:line  …context[match]context…` per place. Use it first when the user quotes or describes text from the PDF ("the sentence on page 3 about …"), or to find prose spread over `\input` files; grep is still right for macros, labels and code.
 
 ## Commands
 
@@ -28,7 +29,6 @@ Everything else runs through the `ternlatex` CLI:
 - `ternlatex checkpoints`, `ternlatex diff [REV] [--doc NAME]`, `ternlatex restore REV [PATH...]`: every save is snapshotted on `refs/ternlatex/checkpoints`; `diff` builds a redline PDF against a commit or checkpoint; `restore` brings files back (checkpointing the current state first).
 - `ternlatex refs search QUERY...`: search the user's Zotero library; one line per item: `key<TAB>year<TAB>creators<TAB>title`. `ternlatex refs find QUERY...` searches the project's .bib first, then Zotero (adds a `bib`/`zotero` column).
 - `ternlatex outline [--doc NAME] [--json]`: the document's sections, floats and labelled equations with their numbers, then problems (undefined refs, unused/duplicate labels, missing citations) as `file:line: kind: key`.
-- `ternlatex search QUERY... [--doc NAME]`: where words are in the PDF and the source, typos and LaTeX markup tolerated: one line per place, `p.N  file:line  …context[match]context…`. Use it to find text the user quotes from the PDF ("the sentence on page 3 about …") before grepping the sources.
 - `ternlatex refs add KEY...` / `ternlatex refs sync`: append Zotero entries for those keys / for every cited key no .bib defines (never touches existing entries). Undefined citations are also imported automatically after each build.
 - `ternlatex changes [--author ID]`, `ternlatex accept|reject (ID...|--author ID|--all)`, `ternlatex comments import FILE.pdf --author ID`: tracked changes and comments (`changes` package).
 - `build/status.json`: `{docs: [{doc, root, build, rev, state, ok, diagnostics:[{severity,file,line,message}]}]}`.
