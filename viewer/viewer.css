@@ -178,6 +178,7 @@ button:disabled { opacity: 0.45; cursor: default; background: none; }
 #search-list .sr-meta a { color: inherit; text-decoration: underline dotted; cursor: pointer; }
 #search-list .sr-meta a:hover { color: var(--info); }
 #search-list .sr-in { font-style: italic; }
+#search-list .sr-typo { color: var(--warn); }
 #search-list .sr-note { padding: 6px 10px; color: var(--muted); cursor: default; }
 
 .search-hit {

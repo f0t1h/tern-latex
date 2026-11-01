@@ -21,7 +21,8 @@ export async function searchCommand(args: string[]): Promise<number> {
   if (!existsSync(p.pdf)) console.error("no PDF yet: searching the source only; run `ternlatex build`");
   for (const h of result.hits) {
     const where = [h.page === undefined ? undefined : `p.${h.page}`, h.source ? `${h.source.file}:${h.source.line}` : undefined].filter(Boolean).join("  ");
-    console.log(`${where}  ${h.in === "both" ? "" : `(${h.in} only) `}${h.before}[${h.match}]${h.after}`);
+    const tags = [h.in === "both" ? undefined : `${h.in} only`, h.typo ? "possible typo" : undefined].filter(Boolean);
+    console.log(`${where}  ${tags.length ? `(${tags.join(", ")}) ` : ""}${h.before}[${h.match}]${h.after}`);
   }
   if (result.truncated) console.log(`… more than ${result.hits.length} places; narrow the query`);
   return result.hits.length ? 0 : 1;

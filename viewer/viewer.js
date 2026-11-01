@@ -1067,6 +1067,7 @@ function renderSearchList(truncated) {
       meta.append(link);
     }
     if (h.in === 'source') meta.append(el('span', 'sr-in', 'LaTeX source only'));
+    if (h.typo) meta.append(el('span', 'sr-typo', 'possible typo in the document'));
     li.append(text, meta);
     li.addEventListener('click', () => setCurrentHit(i, true));
     return li;

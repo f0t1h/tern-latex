@@ -245,7 +245,7 @@ export default function ternlatex(pi: ExtensionAPI): void {
     name: "latex_search",
     label: "Search PDF and source",
     description:
-      "Find where words are in the built PDF and in the LaTeX prose (no preamble, comments, math, labels or file names), fuzzily: typos, accents, hyphenation and markup between words don't matter. One line per place: `p.N  file:line  …context[match]context…`, marked `(source only)` or `(pdf only)` when not in both. Use it when the user quotes or paraphrases the PDF (\"the sentence about X on page 3\") or names text you must locate across files; use grep for macros, labels and code.",
+      "Find where words are in the built PDF and in the LaTeX prose (no preamble, comments, math, labels or file names), fuzzily: typos in the query, accents, hyphenation and markup between words don't matter. One line per place: `p.N  file:line  …context[match]context…`, marked `(source only)` or `(pdf only)` when not in both, and `(possible typo)` where the document seems to misspell a query word it has elsewhere. Use it when the user quotes or paraphrases the PDF (\"the sentence about X on page 3\"), names text you must locate across files, or asks for misspellings of a word; use grep for macros, labels and code.",
     parameters: z.object({
       query: z.string().describe("words to find, as they read in the PDF"),
       doc: z.string().optional().describe("document name from ternlatex.toml when the project has several"),

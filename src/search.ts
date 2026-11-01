@@ -19,6 +19,8 @@ export interface SearchHit {
   in: "pdf" | "source" | "both";
   /** 0–1: 1 is the query's words exactly, less for prefixes, typos and words apart. */
   score: number;
+  /** A word here looks like a misspelling, in the document, of a query word it has elsewhere ("fsat" for "fast"). */
+  typo?: true;
   /** The page it is on, when known. */
   page?: number;
   /** The matched words' boxes (top-left-origin PDF points); absent when only `box` is known. */
@@ -82,8 +84,9 @@ const NEIGHBOURS: ReadonlyMap<string, string> = new Map(
   ),
 );
 
-function nextTo(a: string | undefined, b: string): boolean {
-  return a !== undefined && (a === b || (NEIGHBOURS.get(a)?.includes(b) ?? false));
+/** Whether keys A and B are the same or neighbours; false when either is missing (a word's edge). */
+function nextTo(a: string | undefined, b: string | undefined): boolean {
+  return a !== undefined && b !== undefined && (a === b || (NEIGHBOURS.get(a)?.includes(b) ?? false));
 }
 
 /** Typing slips and what each costs: the likely ones (a neighbouring key, a doubled letter) cost less. */
@@ -110,7 +113,7 @@ export function typoCost(typed: string, word: string, max: number): number {
   const over = max + 1;
   if (Math.abs(typed.length - word.length) * COST.slip > max) return over;
   // An extra typed letter: cheap when it is next to (or a copy of) a letter beside it.
-  const extra = (i: number) => (nextTo(typed[i], typed[i - 1] ?? "") || nextTo(typed[i], typed[i + 1] ?? "") ? COST.slip : COST.gap);
+  const extra = (i: number) => (nextTo(typed[i], typed[i - 1]) || nextTo(typed[i], typed[i + 1]) ? COST.slip : COST.gap);
   // A letter of WORD not typed: cheap when it is one of a double.
   const missed = (j: number) => (word[j] === word[j - 1] || word[j] === word[j + 1] ? COST.double : COST.gap);
   let before: number[] = [];
@@ -162,6 +165,8 @@ export interface Match {
   from: number;
   to: number;
   score: number;
+  /** A word of it looks like a misspelling of a query word the document has elsewhere (TermRule's set). */
+  typo: boolean;
 }
 
 /** Index of the first of the ascending POSITIONS at or after `at`. */
@@ -177,38 +182,61 @@ function lowerBound(hits: { pos: number }[], at: number): number {
 }
 
 /**
- * Which TERMS may match by typo or inside a word: those no word of the document (KEY_LISTS) is or starts with.
- * A fuzzy finder that offers "last" for "fast" in a text that has "fast" is noise; typos are the fallback.
+ * How a query word may match document words that are neither it nor start with it: "any" (the document doesn't
+ * have the word, so the query may be the misspelt one: typos and words containing it), or only the words of the
+ * set (the document has the word; these look like misspellings of it in the document).
  */
-export function fuzzyTerms(keyLists: readonly (readonly string[])[], terms: readonly string[]): boolean[] {
-  const fuzzy = terms.map(() => true);
-  const seen = new Set<string>();
-  for (const keys of keyLists) {
-    for (const key of keys) {
-      if (seen.has(key)) continue;
-      seen.add(key);
-      terms.forEach((t, j) => {
-        if (fuzzy[j] && termScore(t, key, j === terms.length - 1) >= STRONG) fuzzy[j] = false;
-      });
+export type TermRule = "any" | ReadonlySet<string>;
+
+/** A slip this likely (COST: a neighbouring key, a swap, a doubled letter) can be a misspelling in the document. */
+const LIKELY_SLIP = 0.6;
+/** ...when the misspelt word occurs at most this often; a word used more is a word ("last" is not "fast"). */
+const RARE = 2;
+
+/**
+ * The rule for each of TERMS over a document's words: its PDF's (PDF_KEYS) and its sources' (SOURCE_KEYS).
+ * A fuzzy finder that offers "last" for "fast" in a text that has "fast" is noise, but a single "fsat" in that
+ * text is a typo worth finding.
+ */
+export function termRules(pdfKeys: readonly string[], sourceKeys: readonly (readonly string[])[], terms: readonly string[]): TermRule[] {
+  const tally = (lists: readonly (readonly string[])[]) => {
+    const m = new Map<string, number>();
+    for (const list of lists) for (const k of list) m.set(k, (m.get(k) ?? 0) + 1);
+    return m;
+  };
+  const inPdf = tally([pdfKeys]);
+  const inSource = tally(sourceKeys);
+  const words = new Set([...inPdf.keys(), ...inSource.keys()]);
+  return terms.map((t, j) => {
+    let present = false;
+    const slips = new Set<string>();
+    for (const k of words) {
+      const s = termScore(t, k, j === terms.length - 1);
+      if (s >= STRONG) present = true;
+      else if (s > 0 && t.length >= 4 && Math.max(inPdf.get(k) ?? 0, inSource.get(k) ?? 0) <= RARE && typoCost(t, k, LIKELY_SLIP) <= LIKELY_SLIP) slips.add(k);
     }
-  }
-  return fuzzy;
+    return present ? slips : "any";
+  });
 }
 
 /**
- * Non-overlapping runs of KEYS (folded words) holding every term, each word matched exactly, by prefix, or (for
- * terms FUZZY allows; default all) inside a word or with typos, close together and preferably in order; in
- * document order, at least MIN_SCORE.
+ * Non-overlapping runs of KEYS (folded words) holding every term, each word matched exactly, by prefix, or as
+ * RULES allow (default "any") inside a word or with typos, close together and preferably in order; in document
+ * order, at least MIN_SCORE.
  */
-export function findMatches(keys: readonly string[], terms: readonly string[], fuzzy: readonly boolean[] = terms.map(() => true)): Match[] {
+export function findMatches(keys: readonly string[], terms: readonly string[], rules: readonly TermRule[] = terms.map(() => "any")): Match[] {
   const n = terms.length;
   if (!n) return [];
   const scored = new Map<string, number[]>();
-  const hits: { pos: number; score: number }[][] = terms.map(() => []);
+  const hits: { pos: number; score: number; typo: boolean }[][] = terms.map(() => []);
   keys.forEach((key, pos) => {
     let s = scored.get(key);
     if (!s) scored.set(key, (s = terms.map((t, j) => termScore(t, key, j === n - 1))));
-    for (let j = 0; j < n; j++) if (s[j] >= (fuzzy[j] ? Number.MIN_VALUE : STRONG)) hits[j].push({ pos, score: s[j] });
+    for (let j = 0; j < n; j++) {
+      const rule = rules[j];
+      if (s[j] >= STRONG || (s[j] > 0 && rule === "any")) hits[j].push({ pos, score: s[j], typo: false });
+      else if (s[j] > 0 && rule !== "any" && rule.has(key)) hits[j].push({ pos, score: s[j], typo: true });
+    }
   });
   if (hits.some((h) => !h.length)) return [];
   // Every match holds the rarest term: try each of its places, gathering the other terms nearby.
@@ -219,12 +247,13 @@ export function findMatches(keys: readonly string[], terms: readonly string[], f
     const placed: number[] = [];
     placed[anchor] = h.pos;
     let total = h.score;
+    let typo = h.typo;
     let complete = true;
     for (let j = 0; j < n && complete; j++) {
       if (j === anchor) continue;
       const want = h.pos + j - anchor;
       let best = 0;
-      let bestPos = -1;
+      let bestHit: (typeof h) | undefined;
       const list = hits[j];
       for (let k = lowerBound(list, h.pos - reach); k < list.length && list[k].pos <= h.pos + reach; k++) {
         const c = list[k];
@@ -232,18 +261,19 @@ export function findMatches(keys: readonly string[], terms: readonly string[], f
         const v = c.score / (1 + 0.25 * Math.abs(c.pos - want));
         if (v > best) {
           best = v;
-          bestPos = c.pos;
+          bestHit = c;
         }
       }
-      if (bestPos < 0) complete = false;
+      if (!bestHit) complete = false;
       else {
-        placed[j] = bestPos;
+        placed[j] = bestHit.pos;
         total += best;
+        typo ||= bestHit.typo;
       }
     }
     if (!complete) continue;
     const ordered = placed.every((p, j) => j === 0 || p > placed[j - 1]);
-    found.push({ from: Math.min(...placed), to: Math.max(...placed), score: (total / n) * (ordered ? 1 : 0.85) });
+    found.push({ from: Math.min(...placed), to: Math.max(...placed), score: (total / n) * (ordered ? 1 : 0.85), typo });
   }
   found.sort((a, b) => b.score - a.score || a.from - b.from);
   const covered = new Set<number>();
@@ -699,13 +729,14 @@ export class SearchIndex {
     const pdf = await this.pdfText(doc);
     const pdfKeys = pdf?.words.map((w) => w.key) ?? [];
     const sources = this.sourceTexts(doc).map((src) => ({ src, keys: src.words.map((w) => w.key) }));
-    // Typos only for query words the document doesn't have, judged over the PDF and the sources together.
-    const fuzzy = fuzzyTerms([pdfKeys, ...sources.map((s) => s.keys)], terms);
+    // Typos, judged over the PDF and the sources together: any for query words the document lacks, else only
+    // likely misspellings in the document.
+    const rules = termRules(pdfKeys, sources.map((s) => s.keys), terms);
 
     const pdfHits: Hit[] = [];
     if (pdf) {
       const keys = pdfKeys;
-      for (const m of findMatches(keys, terms, fuzzy)) {
+      for (const m of findMatches(keys, terms, rules)) {
         const first = pdf.words[m.from];
         const last = pdf.words[m.to];
         const rects = pdf.words.slice(m.from, m.to + 1).flatMap((w) => w.boxes);
@@ -716,6 +747,7 @@ export class SearchIndex {
         pdfHits.push({
           in: "pdf",
           score: m.score,
+          ...(m.typo ? { typo: true as const } : {}),
           page: first.page,
           rects,
           source: loc ? { file: this.rel(loc.file), line: loc.line } : undefined,
@@ -727,7 +759,7 @@ export class SearchIndex {
 
     const sourceHits: Hit[] = [];
     for (const { src, keys } of sources) {
-      for (const m of findMatches(keys, terms, fuzzy)) {
+      for (const m of findMatches(keys, terms, rules)) {
         const first = src.words[m.from];
         const matched = keys.slice(m.from, m.to + 1).join(" ");
         const box = synctex?.forward(join(this.cfg.dir, src.file), first.line) ?? null;
@@ -736,6 +768,7 @@ export class SearchIndex {
         sourceHits.push({
           in: "source",
           score: m.score,
+          ...(m.typo ? { typo: true as const } : {}),
           page: box?.page,
           box: box ?? undefined,
           source: { file: src.file, line: first.line },
@@ -777,7 +810,8 @@ export class SearchIndex {
 
     const best = Math.max(0, ...hits.map((h) => h.score));
     const kept = hits
-      .filter((h) => h.score >= Math.max(MIN_SCORE, best - SCORE_BAND))
+      // A possible typo in the document always shows: it is what an exact match can't find.
+      .filter((h) => h.typo || h.score >= Math.max(MIN_SCORE, best - SCORE_BAND))
       .sort((a, b) => {
         if (a.page !== undefined && b.page !== undefined) return a.page - b.page || topOf(a) - topOf(b) || (a.rects?.[0]?.x ?? 0) - (b.rects?.[0]?.x ?? 0);
         if (a.page !== undefined || b.page !== undefined) return a.page === undefined ? 1 : -1;

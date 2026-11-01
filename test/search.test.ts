@@ -3,7 +3,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { type Config, type DocConfig, docPaths, loadConfig } from "../src/config.ts";
-import { findMatches, fold, fuzzyTerms, proseOf, queryTerms, SearchIndex, type SearchHit, typoCost } from "../src/search.ts";
+import { findMatches, fold, proseOf, queryTerms, SearchIndex, type SearchHit, termRules, typoCost } from "../src/search.ts";
 import { SyncTex } from "../src/synctex.ts";
 
 const FIXTURE = join(import.meta.dir, "fixtures", "search");
@@ -51,7 +51,7 @@ describe("findMatches", () => {
 
   test("an exact phrase scores 1; typos, prefixes and gaps score less, in that spirit", () => {
     const text = "the quick brown fox jumps over the lazy dog";
-    expect(find(text, "brown fox")).toEqual([{ from: 2, to: 3, score: 1 }]);
+    expect(find(text, "brown fox")).toEqual([{ from: 2, to: 3, score: 1, typo: false }]);
     const typo = find(text, "qiuck brown")[0];
     expect(typo.from).toBe(1);
     expect(typo.score).toBeLessThan(1);
@@ -73,14 +73,18 @@ describe("findMatches", () => {
     expect(find("cat and cat and cat", "cat").map((m) => m.from)).toEqual([0, 2, 4]);
   });
 
-  test("typos are matched only for query words the document doesn't have", () => {
-    const keys = "the fast and the last ship".split(" ");
+  test("when the document has the query word, other words match only as its rare, likely misspellings", () => {
     const terms = queryTerms("fast");
-    expect(findMatches(keys, terms, fuzzyTerms([keys], terms)).map((m) => keys[m.from])).toEqual(["fast"]);
+    const search = (text: string) => {
+      const keys = text.split(" ");
+      return findMatches(keys, terms, termRules(keys, [], terms)).map((m) => `${keys[m.from]}${m.typo ? "?" : ""}`);
+    };
+    // "fsat" (a swap) is a typo in the document; "last" (a far key) and "fats" (used too often) are words.
+    expect(search("the fast car and the fsat one were last , fats fats fats")).toEqual(["fast", "fsat?"]);
+    // Without "fast" the query may be the misspelt one: any close word, nearest keys first.
     const without = "the vast and the last ship".split(" ");
-    const found = findMatches(without, terms, fuzzyTerms([without], terms));
-    expect(found.map((m) => without[m.from])).toEqual(["vast", "last"]);
-    // f and v are neighbouring keys, f and l are not.
+    const found = findMatches(without, terms, termRules(without, [], terms));
+    expect(found.map((m) => [without[m.from], m.typo])).toEqual([["vast", false], ["last", false]]);
     expect(found[0].score).toBeGreaterThan(found[1].score);
   });
 });
@@ -92,6 +96,9 @@ describe("typoCost", () => {
     expect(typoCost("seaarch", "search", 2)).toBeLessThan(typoCost("seaprch", "search", 2));
     expect(typoCost("serach", "search", 2)).toBeLessThan(typoCost("sexrch", "search", 2));
     expect(typoCost("search", "search", 2)).toBe(0);
+    // An extra first letter has no neighbour on one side: only the other side can make it a slip.
+    expect(typoCost("fsat", "sat", 2)).toBe(0.8);
+    expect(typoCost("asat", "sat", 2)).toBe(0.5);
   });
 
   test("stops above the budget", () => {

@@ -150,12 +150,14 @@ Keys are written for macOS. On Windows and Linux, ⌘ is Ctrl and ⌥ is Alt: �
 - Zoom with ⌘+, ⌘− and ⌘0, or with the toolbar. `#page=N` in the URL opens a page.
 - **Search** with **⌘F**, `/` or **⌕**. It searches the typeset text and the LaTeX source at once and
   marks every place on the PDF. Matching tolerates accents, ligatures, line-end hyphenation and words a
-  little apart or in another order. Typos count only for a query word the document doesn't contain
-  ("fast" never finds "last" in a text that says "fast"), and the likely ones cost least: a neighbouring
-  key, a missed or extra letter, two letters swapped. In the source it reads only the prose: section titles,
-  captions, table cells, footnotes, macro arguments and citation keys, never the preamble, comments,
-  math, labels, package options or file names. Text only in the source (a citation key, say) is marked
-  on the lines SyncTeX gives for it. Enter and ⇧Enter go to the next and previous place, **⌘Enter**
+  little apart or in another order. A typo in your query finds the word when the document doesn't have
+  what you typed; when it does, other words count only as its likely misspellings in the document (a
+  single "fsat" where the text says "fast", marked **possible typo**; never "last"). Likely slips cost
+  least: a neighbouring key, a missed or extra letter, two letters swapped. In the source it reads only
+  the prose: section titles, captions, table cells, footnotes, macro arguments and citation keys, never
+  the preamble, comments, math, labels, package options or file names. Text only in the source (a
+  citation key, say) is marked on the lines SyncTeX gives for it. Enter and ⇧Enter go to the next and
+  previous place, **⌘Enter**
   opens the source, and the list shows each place with its page and `file:line`. Results follow
   rebuilds.
 - Toolbar: **↻** rebuilds now; **⤓** opens the PDF in your PDF app (to save, print or share).
