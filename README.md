@@ -149,8 +149,10 @@ Keys are written for macOS. On Windows and Linux, ⌘ is Ctrl and ⌥ is Alt: �
 - **⌘-click** on the PDF jumps to the source line (SyncTeX).
 - Zoom with ⌘+, ⌘− and ⌘0, or with the toolbar. `#page=N` in the URL opens a page.
 - **Search** with **⌘F**, `/` or **⌕**. It searches the typeset text and the LaTeX source at once and
-  marks every place on the PDF. Matching tolerates typos, accents, ligatures, line-end hyphenation and
-  words a little apart or in another order. In the source it reads only the prose: section titles,
+  marks every place on the PDF. Matching tolerates accents, ligatures, line-end hyphenation and words a
+  little apart or in another order. Typos count only for a query word the document doesn't contain
+  ("fast" never finds "last" in a text that says "fast"), and the likely ones cost least: a neighbouring
+  key, a missed or extra letter, two letters swapped. In the source it reads only the prose: section titles,
   captions, table cells, footnotes, macro arguments and citation keys, never the preamble, comments,
   math, labels, package options or file names. Text only in the source (a citation key, say) is marked
   on the lines SyncTeX gives for it. Enter and ⇧Enter go to the next and previous place, **⌘Enter**

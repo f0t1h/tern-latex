@@ -3,7 +3,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { type Config, type DocConfig, docPaths, loadConfig } from "../src/config.ts";
-import { findMatches, fold, proseOf, queryTerms, SearchIndex, type SearchHit } from "../src/search.ts";
+import { findMatches, fold, fuzzyTerms, proseOf, queryTerms, SearchIndex, type SearchHit, typoCost } from "../src/search.ts";
 import { SyncTex } from "../src/synctex.ts";
 
 const FIXTURE = join(import.meta.dir, "fixtures", "search");
@@ -71,6 +71,31 @@ describe("findMatches", () => {
 
   test("finds each place once, in document order", () => {
     expect(find("cat and cat and cat", "cat").map((m) => m.from)).toEqual([0, 2, 4]);
+  });
+
+  test("typos are matched only for query words the document doesn't have", () => {
+    const keys = "the fast and the last ship".split(" ");
+    const terms = queryTerms("fast");
+    expect(findMatches(keys, terms, fuzzyTerms([keys], terms)).map((m) => keys[m.from])).toEqual(["fast"]);
+    const without = "the vast and the last ship".split(" ");
+    const found = findMatches(without, terms, fuzzyTerms([without], terms));
+    expect(found.map((m) => without[m.from])).toEqual(["vast", "last"]);
+    // f and v are neighbouring keys, f and l are not.
+    expect(found[0].score).toBeGreaterThan(found[1].score);
+  });
+});
+
+describe("typoCost", () => {
+  test("likely slips cost less: a neighbouring key, a missed double, an extra letter beside its key, a swap", () => {
+    expect(typoCost("dast", "fast", 2)).toBeLessThan(typoCost("last", "fast", 2));
+    expect(typoCost("ocur", "occur", 2)).toBeLessThan(typoCost("occr", "occur", 2));
+    expect(typoCost("seaarch", "search", 2)).toBeLessThan(typoCost("seaprch", "search", 2));
+    expect(typoCost("serach", "search", 2)).toBeLessThan(typoCost("sexrch", "search", 2));
+    expect(typoCost("search", "search", 2)).toBe(0);
+  });
+
+  test("stops above the budget", () => {
+    expect(typoCost("abcdef", "uvwxyz", 1)).toBeGreaterThan(1);
   });
 });
 

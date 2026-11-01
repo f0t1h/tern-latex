@@ -68,39 +68,91 @@ export function queryTerms(query: string): string[] {
   return [...query.matchAll(WORD)].map((m) => fold(m[0]));
 }
 
-/** Optimal-string-alignment distance between A and B, or MAX + 1 once it is certainly above MAX. */
-function distance(a: string, b: string, max: number): number {
-  if (Math.abs(a.length - b.length) > max) return max + 1;
+/** Rows of a QWERTY keyboard (also the letter positions of QWERTY-based layouts such as Turkish Q), staggered. */
+const KEY_ROWS = ["1234567890", "qwertyuiop", "asdfghjkl", "zxcvbnm"];
+
+/** Each key's neighbours: beside it, and the two touching it in the rows above and below. */
+const NEIGHBOURS: ReadonlyMap<string, string> = new Map(
+  KEY_ROWS.flatMap((row, r) =>
+    [...row].map((key, i): [string, string] => {
+      const up = KEY_ROWS[r - 1] ?? "";
+      const down = KEY_ROWS[r + 1] ?? "";
+      return [key, `${row[i - 1] ?? ""}${row[i + 1] ?? ""}${up[i] ?? ""}${up[i + 1] ?? ""}${down[i - 1] ?? ""}${down[i] ?? ""}`];
+    }),
+  ),
+);
+
+function nextTo(a: string | undefined, b: string): boolean {
+  return a !== undefined && (a === b || (NEIGHBOURS.get(a)?.includes(b) ?? false));
+}
+
+/** Typing slips and what each costs: the likely ones (a neighbouring key, a doubled letter) cost less. */
+const COST = {
+  /** Hit a neighbouring key instead. */
+  near: 0.5,
+  /** Any other wrong letter. */
+  wrong: 1,
+  /** An extra letter next to its own key or a copy of a neighbour ("seaarch", "searvch"). */
+  slip: 0.5,
+  /** Any other extra letter, or a missed one. */
+  gap: 0.8,
+  /** A missed copy of a doubled letter ("ocur"). */
+  double: 0.5,
+  /** Two letters swapped. */
+  swap: 0.6,
+};
+
+/**
+ * The cost of the slips that turn TYPED into WORD (Damerau, optimal string alignment, with COST), or a number
+ * above MAX once it certainly exceeds it.
+ */
+export function typoCost(typed: string, word: string, max: number): number {
+  const over = max + 1;
+  if (Math.abs(typed.length - word.length) * COST.slip > max) return over;
+  // An extra typed letter: cheap when it is next to (or a copy of) a letter beside it.
+  const extra = (i: number) => (nextTo(typed[i], typed[i - 1] ?? "") || nextTo(typed[i], typed[i + 1] ?? "") ? COST.slip : COST.gap);
+  // A letter of WORD not typed: cheap when it is one of a double.
+  const missed = (j: number) => (word[j] === word[j - 1] || word[j] === word[j + 1] ? COST.double : COST.gap);
   let before: number[] = [];
-  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
-  for (let i = 1; i <= a.length; i++) {
-    const row = [i];
-    let least = i;
-    for (let j = 1; j <= b.length; j++) {
-      let v = Math.min(prev[j] + 1, row[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
-      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) v = Math.min(v, before[j - 2] + 1);
+  let prev = [0];
+  for (let j = 1; j <= word.length; j++) prev.push(prev[j - 1] + missed(j - 1));
+  for (let i = 1; i <= typed.length; i++) {
+    const row = [prev[0] + extra(i - 1)];
+    let least = row[0];
+    for (let j = 1; j <= word.length; j++) {
+      const a = typed[i - 1];
+      const b = word[j - 1];
+      const sub = a === b ? 0 : nextTo(a, b) ? COST.near : COST.wrong;
+      let v = Math.min(prev[j] + extra(i - 1), row[j - 1] + missed(j - 1), prev[j - 1] + sub);
+      if (i > 1 && j > 1 && a === word[j - 2] && typed[i - 2] === b) v = Math.min(v, before[j - 2] + COST.swap);
       row.push(v);
       least = Math.min(least, v);
     }
-    if (least > max) return max + 1;
+    if (least > max) return over;
     before = prev;
     prev = row;
   }
-  return prev[b.length];
+  return prev[word.length];
 }
+
+/** Scores from here up are the query word itself or its start: a document that has them gets no typo matches. */
+const STRONG = 0.8;
 
 /** How well query TERM matches document word KEY (both folded); LAST terms may be typed partly. */
 function termScore(term: string, key: string, last: boolean): number {
   if (key === term) return 1;
-  if (term.length >= 2 && key.startsWith(term)) return last ? 0.9 : 0.8;
+  if (term.length >= 2 && key.startsWith(term)) return last ? 0.9 : STRONG;
   if (term.length >= 3 && key.includes(term)) return 0.65;
-  const typos = term.length >= 8 ? 2 : term.length >= 4 ? 1 : 0;
-  if (!typos) return 0;
-  const d = distance(term, key, typos);
-  if (d <= typos) return d === 1 ? 0.75 : 0.55;
+  // Typo budget: none for short words, where a slip makes another word.
+  const budget = term.length >= 8 ? 2 : term.length >= 4 ? 1 : 0;
+  if (!budget) return 0;
+  const typoScore = (cost: number) => 0.78 - 0.15 * cost;
+  const d = typoCost(term, key, budget);
+  if (d <= budget) return typoScore(d);
   if (last && key.length > term.length) {
-    const p = distance(term, key.slice(0, term.length), typos);
-    if (p <= typos) return p === 1 ? 0.6 : 0.45;
+    // Typed partly, with a slip: "serac" → "searching".
+    const p = typoCost(term, key.slice(0, term.length), budget);
+    if (p <= budget) return typoScore(p) - 0.1;
   }
   return 0;
 }
@@ -125,10 +177,30 @@ function lowerBound(hits: { pos: number }[], at: number): number {
 }
 
 /**
- * Non-overlapping runs of KEYS (folded words) holding every term, each word matched exactly, by prefix, inside
- * a word or with typos, close together and preferably in order; in document order, at least MIN_SCORE.
+ * Which TERMS may match by typo or inside a word: those no word of the document (KEY_LISTS) is or starts with.
+ * A fuzzy finder that offers "last" for "fast" in a text that has "fast" is noise; typos are the fallback.
  */
-export function findMatches(keys: readonly string[], terms: readonly string[]): Match[] {
+export function fuzzyTerms(keyLists: readonly (readonly string[])[], terms: readonly string[]): boolean[] {
+  const fuzzy = terms.map(() => true);
+  const seen = new Set<string>();
+  for (const keys of keyLists) {
+    for (const key of keys) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+      terms.forEach((t, j) => {
+        if (fuzzy[j] && termScore(t, key, j === terms.length - 1) >= STRONG) fuzzy[j] = false;
+      });
+    }
+  }
+  return fuzzy;
+}
+
+/**
+ * Non-overlapping runs of KEYS (folded words) holding every term, each word matched exactly, by prefix, or (for
+ * terms FUZZY allows; default all) inside a word or with typos, close together and preferably in order; in
+ * document order, at least MIN_SCORE.
+ */
+export function findMatches(keys: readonly string[], terms: readonly string[], fuzzy: readonly boolean[] = terms.map(() => true)): Match[] {
   const n = terms.length;
   if (!n) return [];
   const scored = new Map<string, number[]>();
@@ -136,7 +208,7 @@ export function findMatches(keys: readonly string[], terms: readonly string[]): 
   keys.forEach((key, pos) => {
     let s = scored.get(key);
     if (!s) scored.set(key, (s = terms.map((t, j) => termScore(t, key, j === n - 1))));
-    for (let j = 0; j < n; j++) if (s[j] > 0) hits[j].push({ pos, score: s[j] });
+    for (let j = 0; j < n; j++) if (s[j] >= (fuzzy[j] ? Number.MIN_VALUE : STRONG)) hits[j].push({ pos, score: s[j] });
   });
   if (hits.some((h) => !h.length)) return [];
   // Every match holds the rarest term: try each of its places, gathering the other terms nearby.
@@ -624,12 +696,16 @@ export class SearchIndex {
   async search(doc: DocConfig, query: string, synctex: SyncTex | null): Promise<SearchResult> {
     const terms = queryTerms(query);
     if (!terms.length) return { query, hits: [], truncated: false };
-    const pdfHits: Hit[] = [];
-
     const pdf = await this.pdfText(doc);
+    const pdfKeys = pdf?.words.map((w) => w.key) ?? [];
+    const sources = this.sourceTexts(doc).map((src) => ({ src, keys: src.words.map((w) => w.key) }));
+    // Typos only for query words the document doesn't have, judged over the PDF and the sources together.
+    const fuzzy = fuzzyTerms([pdfKeys, ...sources.map((s) => s.keys)], terms);
+
+    const pdfHits: Hit[] = [];
     if (pdf) {
-      const keys = pdf.words.map((w) => w.key);
-      for (const m of findMatches(keys, terms)) {
+      const keys = pdfKeys;
+      for (const m of findMatches(keys, terms, fuzzy)) {
         const first = pdf.words[m.from];
         const last = pdf.words[m.to];
         const rects = pdf.words.slice(m.from, m.to + 1).flatMap((w) => w.boxes);
@@ -650,9 +726,8 @@ export class SearchIndex {
     }
 
     const sourceHits: Hit[] = [];
-    for (const src of this.sourceTexts(doc)) {
-      const keys = src.words.map((w) => w.key);
-      for (const m of findMatches(keys, terms)) {
+    for (const { src, keys } of sources) {
+      for (const m of findMatches(keys, terms, fuzzy)) {
         const first = src.words[m.from];
         const matched = keys.slice(m.from, m.to + 1).join(" ");
         const box = synctex?.forward(join(this.cfg.dir, src.file), first.line) ?? null;
