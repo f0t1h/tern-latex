@@ -37,6 +37,7 @@
     <button id="review-btn" class="tool" type="button" hidden aria-pressed="false"
       title="Tracked changes and comments (LaTeX changes package)"><span class="glyph" aria-hidden="true">✎</span> Review <span id="review-count">(0)</span></button>
     <a id="download" href="/pdf?download=1" download="document.pdf" hidden title="Download PDF">⤓</a>
+    <button id="search-btn" type="button" aria-haspopup="dialog" aria-expanded="false" title="Search the PDF and the LaTeX source (⌘F or /)">⌕</button>
     <span id="page-info" title="Current page / total pages">– / –</span>
     <div id="zoom" role="group" aria-label="Zoom">
       <button id="zoom-out" type="button" title="Zoom out (⌘−)">−</button>
@@ -67,6 +68,17 @@
   </div>
 
   <div id="help" hidden role="dialog" aria-label="Keys and gestures"></div>
+  <div id="search-panel" hidden role="search">
+    <div class="search-row">
+      <input id="search-input" type="text" autocomplete="off" spellcheck="false"
+        placeholder="Search the text and the LaTeX source" title="Typos are fine. Enter: next · ⇧Enter: previous · ⌘Enter: open the source · Esc: close">
+      <span id="search-count" class="muted"></span>
+      <button id="search-prev" type="button" title="Previous (⇧Enter)" aria-label="Previous">↑</button>
+      <button id="search-next" type="button" title="Next (Enter)" aria-label="Next">↓</button>
+      <button id="search-close" type="button" title="Close (Esc)" aria-label="Close">×</button>
+    </div>
+    <ol id="search-list"></ol>
+  </div>
   <div id="ctx-menu" hidden role="menu" tabindex="-1" aria-label="Actions"></div>
 
   <aside id="diag-panel" hidden>

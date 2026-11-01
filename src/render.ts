@@ -27,6 +27,12 @@ export async function loadPdfjs(): Promise<Pdfjs> {
   return (await loaded).pdfjs;
 }
 
+/** @napi-rs/canvas, loaded with pdf.js. */
+export async function loadCanvas(): Promise<NapiCanvas> {
+  loaded ??= load();
+  return (await loaded).canvas;
+}
+
 /** pdf.js asks for cMaps, standard fonts and wasm decoders by kind; they come from the shipped pdf.js assets. */
 const DATA_ROOT: Record<string, string> = { cMapUrl: "pdfjs-cmaps/", standardFontDataUrl: "pdfjs-fonts/", wasmUrl: "pdfjs-wasm/" };
 

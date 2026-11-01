@@ -108,6 +108,14 @@ const ui = {
   tipText: $('tip-text'),
   tipClose: $('tip-close'),
   ctxMenu: $('ctx-menu'),
+  searchBtn: $('search-btn'),
+  searchPanel: $('search-panel'),
+  searchInput: $('search-input'),
+  searchCount: $('search-count'),
+  searchPrev: $('search-prev'),
+  searchNext: $('search-next'),
+  searchClose: $('search-close'),
+  searchList: $('search-list'),
 };
 
 // One worker for the whole session; documents passed `worker` do not destroy it.
@@ -864,6 +872,8 @@ function swapIn(pdf, rev, newPages, staging, scale, kind, docName) {
     state.pendingReveal = null;
     applyReveal(r);
   }
+  // New pages: the search's places moved with the text.
+  if (searchOpen() && search.query) runSearch({ jump: false });
 }
 
 // ---------------------------------------------------------------- reveal (forward search)
@@ -918,6 +928,225 @@ function applyReveal(r) {
     viewer.scrollWidth > viewer.clientWidth ? pageLeft + left + width / 2 - viewer.clientWidth / 2 : 0;
   viewer.scrollTo({ top: Math.max(0, targetTop), left: Math.max(0, targetLeft), behavior: 'smooth' });
 }
+
+// ---------------------------------------------------------------- search (PDF text and LaTeX source)
+
+// The server matches the query, fuzzily, against the PDF's text and the LaTeX prose (GET /search) and returns
+// places in reading order: the matched words' boxes, or for text only in the source the lines SyncTeX gives.
+
+const SEARCH_DEBOUNCE_MS = 140;
+const search = {
+  query: '', // what `hits` are for
+  hits: [],
+  current: -1,
+  timer: 0,
+  ctl: null, // AbortController of the request in flight
+};
+
+function searchOpen() {
+  return !ui.searchPanel.hidden;
+}
+
+function openSearch() {
+  ui.searchPanel.hidden = false;
+  ui.searchBtn.setAttribute('aria-expanded', 'true');
+  // Like a browser's find: a short selection becomes the query.
+  const sel = window.getSelection()?.toString().trim() ?? '';
+  if (sel && sel.length <= 80 && !sel.includes('\n')) ui.searchInput.value = sel;
+  ui.searchInput.focus();
+  ui.searchInput.select();
+  if (ui.searchInput.value.trim() !== search.query) scheduleSearch(0);
+  else drawSearchHits();
+}
+
+function closeSearch() {
+  ui.searchPanel.hidden = true;
+  ui.searchBtn.setAttribute('aria-expanded', 'false');
+  clearTimeout(search.timer);
+  search.ctl?.abort();
+  for (const d of document.querySelectorAll('.search-hit')) d.remove();
+}
+
+function scheduleSearch(delay = SEARCH_DEBOUNCE_MS) {
+  clearTimeout(search.timer);
+  search.timer = setTimeout(() => runSearch({ jump: true }), delay);
+}
+
+/** Fetches the query's places. `jump`: show the first one from the reading position on (typing); else keep the place (a rebuild). */
+async function runSearch({ jump }) {
+  clearTimeout(search.timer);
+  search.ctl?.abort();
+  const q = ui.searchInput.value.trim();
+  if (!q) {
+    setSearchResults('', [], false, false);
+    return;
+  }
+  const ctl = new AbortController();
+  search.ctl = ctl;
+  try {
+    const res = await fetch(docURL('/search', { q }), { signal: ctl.signal, cache: 'no-store' });
+    if (!res.ok) throw new Error(`GET /search returned ${res.status}`);
+    const r = await res.json();
+    if (search.ctl !== ctl) return;
+    search.ctl = null;
+    setSearchResults(q, Array.isArray(r.hits) ? r.hits : [], r.truncated === true, jump);
+  } catch (err) {
+    if (err?.name === 'AbortError') return;
+    ui.searchCount.textContent = 'failed';
+    ui.searchCount.classList.add('none');
+    console.error('ternlatex: search failed', err);
+  }
+}
+
+/** A hit's first box as fractions of its page (zoom-independent), or null when it is on no shown page. */
+function hitFrame(h, box = h.rects?.[0] ?? h.box) {
+  const p = h.page ? state.pages[h.page - 1] : null;
+  if (!p || !box || state.docKind !== 'live') return null;
+  const vp = p.proxy.getViewport({ scale: 1 });
+  const [vx0, , , vy1] = p.proxy.view;
+  // Boxes are top-left-origin PDF points; PDF user space is bottom-left-origin.
+  const a = vp.convertToViewportPoint(vx0 + box.x, vy1 - box.y);
+  const b = vp.convertToViewportPoint(vx0 + box.x + box.width, vy1 - box.y - box.height);
+  return {
+    p,
+    left: Math.min(a[0], b[0]) / vp.width,
+    top: Math.min(a[1], b[1]) / vp.height,
+    width: Math.abs(b[0] - a[0]) / vp.width,
+    height: Math.abs(b[1] - a[1]) / vp.height,
+  };
+}
+
+function setSearchResults(q, hits, truncated, jump) {
+  const before = search.hits[search.current];
+  search.query = q;
+  search.hits = hits;
+  renderSearchList(truncated);
+  drawSearchHits();
+  let i = -1;
+  if (hits.length) {
+    if (jump) {
+      // The first place from the top of the view on, else the first.
+      const top = viewer.scrollTop;
+      i = hits.findIndex((h) => {
+        const f = hitFrame(h);
+        return f && f.p.div.offsetTop + f.top * f.p.div.offsetHeight >= top;
+      });
+      if (i < 0) i = 0;
+    } else {
+      // After a rebuild: the place nearest the one shown before.
+      const old = before && hitFrame(before);
+      i = 0;
+      if (old) {
+        let best = Infinity;
+        hits.forEach((h, k) => {
+          const f = hitFrame(h);
+          const d = f ? Math.abs(f.p.index - old.p.index) * 10 + Math.abs(f.top - old.top) : Infinity;
+          if (d < best) [best, i] = [d, k];
+        });
+      }
+    }
+  }
+  setCurrentHit(i, jump);
+}
+
+function renderSearchList(truncated) {
+  const items = search.hits.map((h, i) => {
+    const li = el('li');
+    li.dataset.hit = String(i);
+    const text = el('div', 'sr-text');
+    text.append(h.before ?? '', el('mark', null, h.match ?? ''), h.after ?? '');
+    const meta = el('div', 'sr-meta');
+    meta.append(el('span', null, h.page ? `p. ${h.page}` : 'not placed in the PDF'));
+    if (h.source) {
+      const link = el('a', null, `${h.source.file}:${h.source.line}`);
+      link.title = state.caps.editor ? 'Open the source in the editor (⌘Enter)' : "Print the source's file:line in the dev terminal";
+      link.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openFile(h.source.file, h.source.line);
+      });
+      meta.append(link);
+    }
+    if (h.in === 'source') meta.append(el('span', 'sr-in', 'LaTeX source only'));
+    li.append(text, meta);
+    li.addEventListener('click', () => setCurrentHit(i, true));
+    return li;
+  });
+  if (truncated) items.push(el('li', 'sr-note', 'More places match: add words to narrow it down.'));
+  if (search.hits.length && state.docKind !== 'live') items.unshift(el('li', 'sr-note', 'Highlights show on the live PDF (Back to live).'));
+  ui.searchList.replaceChildren(...items);
+}
+
+function drawSearchHits() {
+  for (const d of document.querySelectorAll('.search-hit')) d.remove();
+  search.hits.forEach((h, i) => {
+    for (const box of h.rects ?? (h.box ? [h.box] : [])) {
+      const f = hitFrame(h, box);
+      if (!f) continue;
+      const d = el('div', h.rects ? 'search-hit' : 'search-hit approx');
+      d.dataset.hit = String(i);
+      d.style.left = `${f.left * 100}%`;
+      d.style.top = `${f.top * 100}%`;
+      d.style.width = `${f.width * 100}%`;
+      d.style.height = `${f.height * 100}%`;
+      if (i === search.current) d.classList.add('current');
+      f.p.div.append(d);
+    }
+  });
+}
+
+/** Makes hit I the current one; `scroll`: bring it into view. */
+function setCurrentHit(i, scroll) {
+  search.current = i;
+  const n = search.hits.length;
+  ui.searchCount.textContent = n ? `${i + 1} / ${n}` : search.query ? 'none' : '';
+  ui.searchCount.classList.toggle('none', !n && Boolean(search.query));
+  for (const d of document.querySelectorAll('.search-hit.current')) d.classList.remove('current');
+  for (const d of document.querySelectorAll(`.search-hit[data-hit="${i}"]`)) d.classList.add('current');
+  for (const li of ui.searchList.querySelectorAll('li.current')) li.classList.remove('current');
+  const li = ui.searchList.querySelector(`li[data-hit="${i}"]`);
+  li?.classList.add('current');
+  li?.scrollIntoView({ block: 'nearest' });
+  const h = search.hits[i];
+  const f = h && scroll ? hitFrame(h) : null;
+  if (!f) return;
+  const top = f.p.div.offsetTop + f.top * f.p.div.offsetHeight;
+  const left = f.p.div.offsetLeft + (f.left + f.width / 2) * f.p.div.offsetWidth;
+  viewer.scrollTo({
+    top: Math.max(0, top - viewer.clientHeight / 3),
+    left: viewer.scrollWidth > viewer.clientWidth ? Math.max(0, left - viewer.clientWidth / 2) : 0,
+    behavior: 'smooth',
+  });
+}
+
+function stepHit(d) {
+  const n = search.hits.length;
+  if (n) setCurrentHit((search.current + d + n) % n, true);
+}
+
+function openHitSource() {
+  const h = search.hits[search.current];
+  if (h?.source) openFile(h.source.file, h.source.line);
+  else if (h) toast('No source line known for this place');
+}
+
+ui.searchBtn.addEventListener('click', () => (searchOpen() ? closeSearch() : openSearch()));
+ui.searchClose.addEventListener('click', closeSearch);
+ui.searchPrev.addEventListener('click', () => stepHit(-1));
+ui.searchNext.addEventListener('click', () => stepHit(1));
+ui.searchInput.addEventListener('input', () => scheduleSearch());
+ui.searchInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    closeSearch();
+  } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+    openHitSource();
+  } else if (e.key === 'Enter' || e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    // Typed but not searched yet: search now and show the first place.
+    if (ui.searchInput.value.trim() !== search.query) runSearch({ jump: true });
+    else stepHit(e.key === 'ArrowUp' || (e.key === 'Enter' && e.shiftKey) ? -1 : 1);
+  } else return;
+  e.preventDefault();
+  e.stopPropagation();
+});
 
 // ---------------------------------------------------------------- reverse search
 
@@ -2672,11 +2901,13 @@ function renderHelp() {
   viewerRows.push(
     [`${MOD}+  ${MOD}−`, `zoom in / out (also pinch or ${MOD}scroll)`],
     [`${MOD}0`, 'fit width (also a click on the zoom %)'],
+    [`${MOD}F  /`, `search the text and the LaTeX source (typos are fine): Enter / ${IS_MAC ? '⇧' : 'Shift+'}Enter next / previous, ${MOD}Enter opens the source, Esc closes`],
     ['?', 'this help'],
   );
   const toolbarRows = [
     ['↻', 'rebuild now'],
     ['errors / warnings', `list diagnostics; a row opens its source${c.agent ? ', Fix sends it to omp' : ''}`],
+    ['⌕', 'search'],
   ];
   if (c.history) toolbarRows.push(['± Changes', 'redline PDF since the last commit or a checkpoint']);
   toolbarRows.push(['✎ Review', 'tracked changes and comments: accept, reject, jump to them'], ['⤓', 'open the PDF in the system PDF app']);
@@ -3020,6 +3251,7 @@ window.addEventListener('keydown', (e) => {
     closeChangesMenu();
     closeCtxMenu();
     if (state.sel) dismissSelBar();
+    if (searchOpen()) closeSearch();
     return;
   }
   const typing = e.target instanceof HTMLElement && (e.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName));
@@ -3032,6 +3264,11 @@ window.addEventListener('keydown', (e) => {
     }
     if (e.key === '?') {
       setHelp(ui.help.hidden);
+      e.preventDefault();
+      return;
+    }
+    if (e.key === '/') {
+      openSearch();
       e.preventDefault();
       return;
     }
@@ -3065,6 +3302,7 @@ window.addEventListener('keydown', (e) => {
   if (k === '+' || k === '=' || e.code === 'NumpadAdd') zoomStep(1);
   else if (k === '-' || k === '_' || e.code === 'NumpadSubtract') zoomStep(-1);
   else if (k === '0' || e.code === 'Digit0' || e.code === 'Numpad0') fitWidth();
+  else if (e.code === 'KeyF' && !e.shiftKey) openSearch();
   else return;
   e.preventDefault();
 });

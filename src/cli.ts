@@ -23,6 +23,7 @@ import { lint } from "./commands/lint.ts";
 import { review } from "./commands/review.ts";
 import { setupTern, ternConfig } from "./commands/setup-tern.ts";
 import { show } from "./commands/show.ts";
+import { searchCommand } from "./commands/search.ts";
 import { snapshot } from "./commands/snapshot.ts";
 import { tool } from "./commands/tool.ts";
 import { uninstall } from "./commands/uninstall.ts";
@@ -76,6 +77,9 @@ writing
   peek FILE:LINE [--doc NAME] [--width PX] [--json]
                           render the part of the last PDF around a source line (text-block wide) to
                           <outdir>/peek/<doc>.png and print its path
+  search QUERY... [--doc NAME] [--json]
+                          fuzzy search of the PDF text and the LaTeX prose (no preamble, comments, math,
+                          packages or files): each place with its page and source line; exits 1 if none
   fix [--doc NAME]        send the last build's errors and warnings to omp (needs a running dev)
   proofread [FILE[:FROM-TO]...] [--doc NAME] [--direct]
                           proofread prose paragraphs with omp (no tools, thinking off, omp's proofread role);
@@ -189,6 +193,8 @@ async function main(argv: string[]): Promise<number> {
       return outlineCommand(rest);
     case "peek":
       return peek(rest);
+    case "search":
+      return searchCommand(rest);
     case "rewrite":
       return rewriteCommand(rest);
     case "fix": {

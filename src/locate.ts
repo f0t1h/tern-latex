@@ -83,7 +83,7 @@ export function lineEndOffset(src: string, line: number): number {
 }
 
 /** The .tex files the document read in its last successful build (just its root before that). */
-function docTexFiles(cfg: Config, doc: DocConfig): string[] {
+export function docTexFiles(cfg: Config, doc: DocConfig): string[] {
   const p = docPaths(cfg, doc);
   const deps = existsSync(p.deps) ? parseDeps(readFileSync(p.deps, "utf8"), cfg.dir, relative(cfg.dir, p.staging)) : [];
   const files = deps.filter((f) => f.endsWith(".tex"));

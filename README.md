@@ -148,6 +148,14 @@ Keys are written for macOS. On Windows and Linux, ⌘ is Ctrl and ⌥ is Alt: �
   whole list.
 - **⌘-click** on the PDF jumps to the source line (SyncTeX).
 - Zoom with ⌘+, ⌘− and ⌘0, or with the toolbar. `#page=N` in the URL opens a page.
+- **Search** with **⌘F**, `/` or **⌕**. It searches the typeset text and the LaTeX source at once and
+  marks every place on the PDF. Matching tolerates typos, accents, ligatures, line-end hyphenation and
+  words a little apart or in another order. In the source it reads only the prose: section titles,
+  captions, table cells, footnotes, macro arguments and citation keys, never the preamble, comments,
+  math, labels, package options or file names. Text only in the source (a citation key, say) is marked
+  on the lines SyncTeX gives for it. Enter and ⇧Enter go to the next and previous place, **⌘Enter**
+  opens the source, and the list shows each place with its page and `file:line`. Results follow
+  rebuilds.
 - Toolbar: **↻** rebuilds now; **⤓** opens the PDF in your PDF app (to save, print or share).
 - **Select text** in the PDF (drag, or double-click a word) to get an action bar:
   - **Source** opens the editor at that passage.
@@ -280,6 +288,8 @@ machine-readable output.
   the sentence at that position, or the range up to `--to`, each with a short note. It never writes files.
 - `ternlatex peek FILE:LINE [--doc NAME] [--width PX]`: renders the part of the last good PDF around a
   source line to `build/peek/<doc>.png`.
+- `ternlatex search QUERY…`: the viewer's search from the command line. Each place has its page,
+  `file:line` and the text around it, and is marked "source only" or "pdf only" when it isn't in both.
 
 ### Review
 
@@ -398,6 +408,7 @@ Run commands anywhere inside a project (a folder with `ternlatex.toml`), or pass
 | `show FILE:LINE [--doc NAME]` | scrolls the viewer to a source line and highlights it |
 | `outline [--doc NAME] [--json]` | document structure and reference problems |
 | `peek FILE:LINE [--doc NAME] [--width PX] [--json]` | renders the PDF around a source line to `build/peek/<doc>.png` |
+| `search QUERY… [--doc NAME] [--json]` | fuzzy search of the PDF text and the LaTeX prose: page, `file:line` and context per place |
 | `fix [--doc NAME]` | sends the last build's errors and warnings to omp (needs a running `dev`) |
 | `proofread [FILE[:FROM-TO]…] [--doc NAME] [--direct]` | proofreads prose into tracked `proof` suggestions |
 | `rewrite FILE:LINE:COL [--to LINE:COL] [--count N] [--instruction TEXT] [--json]` | prints alternative wordings; never writes files |

@@ -1,0 +1,27 @@
+\documentclass{article}
+\usepackage{amsmath}
+\usepackage[margin=1in]{geometry}
+\newcommand{\tool}{Ternlatex}
+\begin{document}
+\section{Searching the Typeset Text}
+% A comment about zebras that must never be found.
+The \tool{} viewer finds words across the \emph{whole} document, including
+efficient ligatures, the na\"ive caf\'e and a deliberately long paragraph that keeps going so that
+TeX has to break it over several lines and perhaps hyphenate an extraordinarily lengthy
+word such as electroencephalographically or incomprehensibilities somewhere near the margin of the page.
+Hyphenation should not stop a search for incomprehensibilities from finding it.
+
+\input{chapter}
+
+\begin{equation}
+  \mathrm{energy} = m c^2 \label{eq:energy}
+\end{equation}
+As shown in Equation~\ref{eq:energy}, energy is conserved~\cite{einstein1905}.
+
+\begin{tabular}{|l|r|}
+Quokka & 42 \\
+\end{tabular}
+
+\newpage
+Second page talks about the quokka again, and about mountain gorillas.
+\end{document}

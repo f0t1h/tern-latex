@@ -131,6 +131,67 @@ button:disabled { opacity: 0.45; cursor: default; background: none; }
   line-height: 18px;
 }
 #help-btn[aria-expanded="true"] { background: var(--btn-hover); }
+#search-btn { font-size: 18px; line-height: 1; padding: 0 5px; }
+#search-btn[aria-expanded="true"] { background: var(--btn-hover); }
+
+/* ---------- search: panel under the toolbar, highlights on the pages ---------- */
+
+#search-panel {
+  position: fixed;
+  top: calc(var(--top) + 6px);
+  right: 10px;
+  z-index: 24;
+  display: flex;
+  flex-direction: column;
+  width: min(480px, calc(100vw - 20px));
+  max-height: min(60vh, calc(100vh - var(--top) - 20px));
+  background: var(--panel-bg);
+  color: var(--panel-fg);
+  border: 1px solid var(--bar-border);
+  border-radius: 6px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.3);
+}
+.search-row { display: flex; align-items: center; gap: 4px; padding: 6px; }
+#search-input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 13px;
+  color: inherit;
+  background: transparent;
+  border: 1px solid var(--bar-border);
+  border-radius: 4px;
+  padding: 4px 8px;
+  outline: none;
+}
+#search-input:focus { border-color: var(--info); }
+#search-count { min-width: 4.5em; text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+#search-count.none { color: var(--err); }
+#search-list { list-style: none; margin: 0; padding: 0 0 4px; overflow: auto; border-top: 1px solid var(--bar-border); }
+#search-list:empty { display: none; }
+#search-list li { padding: 5px 10px; cursor: pointer; border-left: 3px solid transparent; }
+#search-list li:hover { background: var(--btn-hover); }
+#search-list li.current { border-left-color: var(--info); background: var(--btn-hover); }
+#search-list .sr-text { overflow-wrap: anywhere; }
+#search-list mark { background: var(--reveal); color: inherit; border-radius: 2px; }
+#search-list .sr-meta { display: flex; gap: 8px; font-size: 11px; color: var(--muted); }
+#search-list .sr-meta a { color: inherit; text-decoration: underline dotted; cursor: pointer; }
+#search-list .sr-meta a:hover { color: var(--info); }
+#search-list .sr-in { font-style: italic; }
+#search-list .sr-note { padding: 6px 10px; color: var(--muted); cursor: default; }
+
+.search-hit {
+  position: absolute;
+  background: rgba(255, 214, 0, 0.38);
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 4;
+  mix-blend-mode: multiply;
+}
+.search-hit.current { background: rgba(255, 140, 0, 0.55); outline: 2px solid rgba(230, 110, 0, 0.9); }
+/* A source match SyncTeX places only to its lines: a band, not a word. */
+.search-hit.approx { background: rgba(255, 214, 0, 0.14); outline: 1px dashed rgba(200, 140, 0, 0.8); }
+.search-hit.approx.current { background: rgba(255, 140, 0, 0.22); outline: 2px dashed rgba(230, 110, 0, 0.9); }
 
 /* ---------- help popover & first-run tip ---------- */
 

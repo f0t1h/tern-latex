@@ -7,6 +7,7 @@ import { type Builder, type Status, writeAtomic } from "./builder.ts";
 import { DICTATION_AUTHOR, OMP_AUTHOR } from "./changes.ts";
 import { type DocConfig, docPaths, paths, posix, type ReviewAuthor } from "./config.ts";
 import { type Diagnostic, formatDiagnostic } from "./diagnostics.ts";
+import { SearchIndex } from "./search.ts";
 import { SyncTex } from "./synctex.ts";
 import { lineEndOffset, type LocatedRange, locateRange, locateSelection } from "./locate.ts";
 import { type Hunk, writeSuggestions } from "./proofread.ts";
@@ -136,6 +137,7 @@ export async function startServer(o: ServerOptions): Promise<DevServer> {
   const p = paths(cfg);
   const clients = new Set<ServerResponse>();
   const synctex = new Map<string, { rev: number; data: Promise<SyncTex> }>();
+  const searchIndex = new SearchIndex(cfg);
 
   const sse = (event: string, data: unknown) => {
     const frame = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -225,6 +227,10 @@ export async function startServer(o: ServerOptions): Promise<DevServer> {
       if (route === "GET /pdf") {
         if (!existsSync(dp.pdf)) return send(res, 404, { error: "no PDF yet" });
         return sendFile(res, dp.pdf, url.searchParams.has("download") ? `${doc.name}.pdf` : undefined);
+      }
+      if (route === "GET /search") {
+        const st = await (loadSynctex(doc)?.catch(() => null) ?? null);
+        return send(res, 200, await searchIndex.search(doc, url.searchParams.get("q") ?? "", st));
       }
       if (route === "GET /capabilities") {
         const agent = o.agent() !== undefined;
