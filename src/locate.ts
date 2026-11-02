@@ -92,15 +92,19 @@ export function docTexFiles(cfg: Config, doc: DocConfig): string[] {
 
 /**
  * Where SELECTION (as the viewer's text layer reports it) is in the document's sources, preferring the
- * occurrence nearest HINT (the SyncTeX guess); null when the words are not found.
+ * occurrence nearest HINT (the SyncTeX guess); null when the words are not found. A single word is only looked
+ * for as a whole word in HINT's file: anywhere else it would match too often to mean anything.
  */
 export function locateSelection(cfg: Config, doc: DocConfig, selection: string, hint?: { file: string; line: number }): Located | null {
   const words = normalise(selection).split(" ").filter(Boolean);
-  if (words.length < 2) return null;
+  const single = words.length === 1;
+  if (!words.length || (single && !hint)) return null;
   const head = words.slice(0, Math.min(6, words.length)).join(" ");
   const tail = words.slice(-Math.min(6, words.length)).join(" ");
+  const letter = /[\p{L}\p{N}]/u;
   let best: (Located & { distance: number }) | null = null;
   for (const file of docTexFiles(cfg, doc)) {
+    if (single && file !== hint?.file) continue;
     const abs = join(cfg.dir, file);
     if (!existsSync(abs)) continue;
     const src = readFileSync(abs, "utf8");
@@ -109,6 +113,7 @@ export function locateSelection(cfg: Config, doc: DocConfig, selection: string, 
     for (let s = hay.indexOf(head); s >= 0; s = hay.indexOf(head, s + 1)) {
       const t = hay.indexOf(tail, s);
       if (t < 0) continue;
+      if (single && (letter.test(hay[s - 1] ?? "") || letter.test(hay[s + head.length] ?? ""))) continue;
       const last = plain.at[Math.min(t + tail.length - 1, plain.at.length - 1)];
       const from = lineAt(src, plain.at[s]);
       const to = lineAt(src, last);

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { join, relative } from "node:path";
 import { Builder, failedPdf, type Status } from "../builder.ts";
+import { reviewer } from "../changes.ts";
 import { loadConfig } from "../config.ts";
 import { projectHooks } from "../hooks.ts";
 import { buildDiff } from "../latexdiff.ts";
@@ -71,6 +72,7 @@ export async function dev(target: string, o: DevOptions): Promise<number> {
     review: {
       changes: () => reviewList(cfg),
       resolve: (ids, decision) => resolveReview(cfg, ids, decision),
+      me: reviewer(cfg),
     },
     proofread: async (target) => {
       const r = await proofread(cfg, [target], { direct: false, build: () => builder.request() });

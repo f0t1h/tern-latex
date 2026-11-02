@@ -170,6 +170,10 @@ Keys are written for macOS. On Windows and Linux, ⌘ is Ctrl and ⌥ is Alt: �
   - **Proofread** proofreads it (see [Proofreading](#proofreading)).
   - **Ask omp…** sends your instruction with the passage's file and lines.
   - **🎙 Dictate** (or `D`) inserts spoken words after it (see [Dictation](#dictation)).
+  - **Strike** (`⌫`), **Replace…** (`E`), **Insert…** (`I`, after the selection), **Highlight** (`H`) and
+    **Comment…** (`C`) mark it as your tracked change in the source (see [Review](#review)). The PDF
+    rebuilds with the mark; ✎ Review lists it for accepting or rejecting. Typed text is escaped unless
+    it contains `\` or `$`.
 
   Ask omp and Fix need `ternlatex dev` running inside Tern. A prompt sent while omp is busy steers the
   running task.
@@ -312,6 +316,13 @@ final = false   # true: typeset as if everything were accepted, without markup
 
 Mark edits with `\added[id=AK]{…}`, `\deleted[id=AK]{…}`, `\replaced[id=AK]{new}{old}` and
 `\comment[id=AK]{…}`. While authors are listed, omp marks its own prose edits with `id=omp`.
+
+Or mark the PDF itself: select text in the viewer and use the action bar's review tools (Strike,
+Replace…, Insert…, Highlight, Comment…). The marks carry your id: `me = "AK"` under `[review]` if set,
+else the initials of your git `user.name`. Leave `me` out of a `ternlatex.toml` others share, so each
+person's marks carry their own initials. A mark must start and end in plain text: a selection that
+splits a `{…}` group, math or a citation is refused with a reason. Without the `changes` package,
+strikes, replacements and insertions wait in ✎ Review as suggestions; highlights and comments need it.
 
 `ternlatex comments import annotated.pdf --author AK` turns a reviewer's PDF annotations (sticky notes,
 highlights) into `\comment`s on the matching source lines. `/skill:review` has omp work through the

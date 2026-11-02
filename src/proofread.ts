@@ -78,6 +78,8 @@ export interface Hunk {
   new: string;
   why: string;
   line: number;
+  /** Marks `old` without changing it: `\highlight`, with `why` as its comment. */
+  highlight?: boolean;
 }
 
 export interface Target {
@@ -279,13 +281,17 @@ export function applyHunks(text: string, hunks: Hunk[], direct: boolean, author:
   let out = text;
   for (const h of [...hunks].sort((a, b) => b.start - a.start)) {
     const opts = `id=${author}${h.why ? `,comment={${escapeLatex(h.why)}}` : ""}`;
-    const markup = direct
-      ? h.new
-      : h.old && h.new
-        ? `\\replaced[${opts}]{${h.new}}{${h.old}}`
-        : h.new
-          ? `\\added[${opts}]{${h.new}}`
-          : `\\deleted[${opts}]{${h.old}}`;
+    const markup = h.highlight
+      ? direct
+        ? h.old
+        : `\\highlight[${opts}]{${h.old}}`
+      : direct
+        ? h.new
+        : h.old && h.new
+          ? `\\replaced[${opts}]{${h.new}}{${h.old}}`
+          : h.new
+            ? `\\added[${opts}]{${h.new}}`
+            : `\\deleted[${opts}]{${h.old}}`;
     out = out.slice(0, h.start) + markup + out.slice(h.end);
   }
   return out;
@@ -456,7 +462,7 @@ function brokenDocs(cfg: Config): Set<string> {
 }
 
 /** Whether every document that reads these files loads the `changes` package (needed for tracked markup). */
-function changesLoaded(cfg: Config, files: string[]): boolean {
+export function changesLoaded(cfg: Config, files: string[]): boolean {
   for (const doc of cfg.docs) {
     const log = docPaths(cfg, doc).log;
     if (!existsSync(log)) continue;

@@ -68,6 +68,8 @@ export interface ReviewConfig {
   authors: ReviewAuthor[];
   /** Typeset as if every change were accepted, without markup (changes' `final` option). */
   final: boolean;
+  /** The author id the viewer's review marks carry (`[review] me`); unset: initials of git's user.name. */
+  me?: string;
 }
 
 export function findProject(start: string): string | null {
@@ -270,5 +272,6 @@ function reviewConfig(v: unknown): ReviewConfig {
     if (typeof e.id !== "string" || !/^[A-Za-z0-9]+$/.test(e.id)) throw new UsageError(`${CONFIG_FILE}: [review] authors need an alphanumeric id`);
     authors.push({ id: e.id, name: str(e.name, e.id), color: typeof e.color === "string" ? e.color : undefined });
   }
-  return { authors, final: t.final === true };
+  if (t.me !== undefined && (typeof t.me !== "string" || !/^[A-Za-z0-9]+$/.test(t.me))) throw new UsageError(`${CONFIG_FILE}: [review] me must be an alphanumeric author id`);
+  return { authors, final: t.final === true, ...(typeof t.me === "string" ? { me: t.me } : {}) };
 }

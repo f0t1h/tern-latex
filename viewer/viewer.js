@@ -69,6 +69,12 @@ const ui = {
   selRewrite: $('sel-rewrite'),
   selAsk: $('sel-ask'),
   selDictate: $('sel-dictate'),
+  selReview: $('sel-review'),
+  selStrike: $('sel-strike'),
+  selReplace: $('sel-replace'),
+  selInsert: $('sel-insert'),
+  selHighlight: $('sel-highlight'),
+  selComment: $('sel-comment'),
   selInput: $('sel-input'),
   dictatePill: $('dictate-pill'),
   dictateTime: $('dictate-time'),
@@ -139,7 +145,7 @@ const state = {
   pendingReveal: null,
   pendingPos: null, // reading position to restore at the next swap (document switch)
   lastZoomAt: 0,
-  caps: { agent: false, editor: false, popout: false, keys: null, dictation: null, rewrite: false }, // GET /capabilities
+  caps: { agent: false, editor: false, popout: false, keys: null, dictation: null, rewrite: false, reviewer: null }, // GET /capabilities
   sel: null, // SelInfo shown in the selection action bar
   docName: QUERY_DOC || hashParam('doc') || null, // current document; null until GET /docs (or an old server)
   docs: [], // DocEntry[] from GET /docs and SSE status events
@@ -1306,7 +1312,8 @@ function readSelection(s) {
 
 /** The bar maps selections through SyncTeX, which only the live PDF has. */
 function selActionsAvailable() {
-  return state.docKind === 'live' && (state.caps.editor || state.caps.agent || state.caps.proofread || state.caps.rewrite || Boolean(state.caps.dictation));
+  const c = state.caps;
+  return state.docKind === 'live' && (c.editor || c.agent || c.proofread || c.rewrite || Boolean(c.dictation) || Boolean(c.reviewer));
 }
 
 function askOpen() {
@@ -1318,14 +1325,23 @@ function updateSelButtons() {
   ui.selProofread.hidden = !(state.caps.agent || state.caps.proofread);
   ui.selRewrite.hidden = !state.caps.rewrite;
   ui.selAsk.hidden = !state.caps.agent;
+  ui.selReview.hidden = !state.caps.reviewer;
   ui.selDictate.hidden = !state.caps.dictation;
   ui.selDictate.disabled = selBusy || !dictationReady();
   ui.selDictate.title = dictationReady()
     ? 'Speak text to go after this passage; it lands as a suggestion in ✎ Review (key D)'
     : `Dictation needs omp's speech model: ${state.caps.dictation?.hint || 'run `omp setup speech`'}`;
-  if (state.sel && (!selActionsAvailable() || (askOpen() && !state.caps.agent))) hideSelBar();
+  if (state.sel && (!selActionsAvailable() || (askOpen() && selInputMode === 'ask' && !state.caps.agent))) hideSelBar();
   else if (state.sel) anchorSelBar();
 }
+
+/** What the bar's input is for: an instruction to omp, or the text of a review mark. */
+let selInputMode = 'ask';
+const MARK_INPUT = {
+  replace: { placeholder: 'Replace with… (Enter marks it, Esc cancels)', prefill: true },
+  insert: { placeholder: 'Insert after it… (Enter marks it, Esc cancels)', prefill: false },
+  comment: { placeholder: 'Comment… (Enter adds it, Esc cancels)', prefill: false },
+};
 
 function setAskMode(on) {
   ui.selActions.hidden = on;
@@ -1333,11 +1349,25 @@ function setAskMode(on) {
   if (on) {
     ui.selInput.value = '';
     ui.selInput.focus({ preventScroll: true });
-  }
+  } else selInputMode = 'ask';
 }
 
 function openAsk() {
   setAskMode(true);
+  anchorSelBar();
+}
+
+/** The input for a review mark's text; a replacement starts as the selected text. */
+function openMarkInput(kind) {
+  const info = state.sel;
+  if (!info || selBusy) return;
+  setAskMode(true);
+  selInputMode = kind;
+  ui.selInput.placeholder = MARK_INPUT[kind].placeholder;
+  if (MARK_INPUT[kind].prefill) {
+    ui.selInput.value = info.text.replace(/\s+/g, ' ').trim();
+    ui.selInput.select();
+  }
   anchorSelBar();
 }
 
@@ -1412,7 +1442,7 @@ function onSelScroll() {
 function setSelBusy(on) {
   selBusy = on;
   ui.selBar.classList.toggle('busy', on);
-  for (const el of [ui.selSource, ui.selProofread, ui.selRewrite, ui.selAsk, ui.selInput]) el.disabled = on;
+  for (const el of [ui.selSource, ui.selProofread, ui.selRewrite, ui.selAsk, ui.selInput, ui.selStrike, ui.selReplace, ui.selInsert, ui.selHighlight, ui.selComment]) el.disabled = on;
   ui.selDictate.disabled = on || !dictationReady();
   if (!on && askOpen()) ui.selInput.focus({ preventScroll: true });
 }
@@ -1453,6 +1483,34 @@ async function sendToAgent(action, instruction) {
     }
   } catch {
     toast(`${direct ? 'proofread' : 'omp request'} failed: server unreachable`);
+  } finally {
+    setSelBusy(false);
+  }
+}
+
+// ---------------------------------------------------------------- review marks (the user's tracked changes)
+
+const MARK_DONE = { delete: 'Struck out', replace: 'Replaced', insert: 'Inserted', highlight: 'Highlighted', comment: 'Commented' };
+
+/** Marks the selection in the source as the user's tracked change (POST /review/mark); the PDF rebuilds with it. */
+async function markSelection(kind, input = '') {
+  const info = state.sel;
+  if (!info || selBusy) return;
+  setSelBusy(true);
+  try {
+    const res = await postJSON('/review/mark', withDoc({ page: info.page, start: info.start, end: info.end, text: info.text, kind, input }));
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      toast(data?.error ?? `Marking failed (${res.status})`, 4000);
+      return;
+    }
+    const where = data.pending ? ' — a suggestion in ✎ Review (the document does not load the changes package)' : '';
+    toast(`${MARK_DONE[kind]} as ${data.author} (${data.file}:${data.line})${where}`);
+    hideSelBar();
+    document.getSelection()?.removeAllRanges();
+    if (!ui.reviewPanel.hidden) fetchReview();
+  } catch {
+    toast('Marking failed: server unreachable');
   } finally {
     setSelBusy(false);
   }
@@ -1950,7 +2008,7 @@ let capsSeq = 0;
 
 async function fetchCaps() {
   const seq = ++capsSeq;
-  let caps = { agent: false, editor: false, popout: false, history: false, proofread: false, keys: null, dictation: null };
+  let caps = { agent: false, editor: false, popout: false, history: false, proofread: false, keys: null, dictation: null, reviewer: null };
   let answered = false;
   try {
     const res = await fetch('/capabilities', { cache: 'no-store' });
@@ -1961,7 +2019,9 @@ async function fetchCaps() {
         : null;
       const d = c?.dictation;
       const dictation = d && typeof d.ready === 'boolean' ? { ready: d.ready, hint: typeof d.hint === 'string' ? d.hint : '' } : null;
-      caps = { agent: c?.agent === true, editor: c?.editor === true, popout: c?.popout === true, history: c?.history === true, proofread: c?.proofread === true, rewrite: c?.rewrite === true, keys, dictation };
+      const r = c?.reviewer;
+      const reviewer = r && typeof r.id === 'string' && typeof r.name === 'string' ? { id: r.id, name: r.name } : null;
+      caps = { agent: c?.agent === true, editor: c?.editor === true, popout: c?.popout === true, history: c?.history === true, proofread: c?.proofread === true, rewrite: c?.rewrite === true, keys, dictation, reviewer };
       answered = true;
     }
   } catch {
@@ -2902,6 +2962,9 @@ function renderHelp() {
   if (c.rewrite) {
     viewerRows.push(['R', 'with the bar open: Rewrite — alternative wordings of the selection; 1–9 or a click replaces it in the source, / says how, Esc closes']);
   }
+  if (c.reviewer) {
+    viewerRows.push(['⌫  E  I  H  C', `with the bar open: strike out, replace…, insert after…, highlight, comment… — tracked changes in the source as ${c.reviewer.name} (${c.reviewer.id}); ✎ Review lists them`]);
+  }
   viewerRows.push(['Esc', 'close the bar, panels and this help; cancel a dictation']);
   if (state.docs.length > 1) viewerRows.push([`${ALT}1–9  ${ALT}[  ${ALT}]`, 'switch document: by number, previous, next']);
   viewerRows.push(
@@ -3100,6 +3163,16 @@ function ctxSelItems(sel) {
     const notReady = dictationReady() ? '' : ui.selDictate.title;
     items.push(ctxItem('🎙', 'Dictate', 'D', ui.selDictate.title, () => onSel(sel, startDictation), why || notReady));
   }
+  if (c.reviewer) {
+    if (items.length) items.push(ctxSep());
+    items.push(
+      ctxItem('', 'Strike out', '⌫', ui.selStrike.title, () => onSel(sel, () => markSelection('delete')), why),
+      ctxItem('', 'Replace…', 'E', ui.selReplace.title, () => onSel(sel, () => openMarkInput('replace')), why),
+      ctxItem('', 'Insert after…', 'I', ui.selInsert.title, () => onSel(sel, () => openMarkInput('insert')), why),
+      ctxItem('', 'Highlight', 'H', ui.selHighlight.title, () => onSel(sel, () => markSelection('highlight')), why),
+      ctxItem('', 'Comment…', 'C', ui.selComment.title, () => onSel(sel, () => openMarkInput('comment')), why),
+    );
+  }
   if (items.length) items.push(ctxSep());
   items.push(ctxItem('', 'Copy text', `${MOD}C`, 'Copy the selected text', copySelection));
   return items;
@@ -3288,6 +3361,18 @@ window.addEventListener('keydown', (e) => {
       e.preventDefault();
       return;
     }
+    // Review marks with the bar open: ⌫ strike, E replace, I insert, H highlight, C comment.
+    if (state.sel && !askOpen() && state.caps.reviewer && !selBusy) {
+      const k = e.key.toLowerCase();
+      if (e.key === 'Backspace' || e.key === 'Delete') markSelection('delete');
+      else if (k === 'h') markSelection('highlight');
+      else if (k === 'e') openMarkInput('replace');
+      else if (k === 'i') openMarkInput('insert');
+      else if (k === 'c') openMarkInput('comment');
+      else return;
+      e.preventDefault();
+      return;
+    }
   }
   // ⌘1…⌘9 belong to Tern's tabs, so documents switch with ⌥1…⌥9 (Alt on other systems) and ⌥[ / ⌥] cycle.
   // e.code, not e.key: on macOS Option+digit types a symbol (¡ ™ £ …).
@@ -3425,6 +3510,11 @@ ui.rewriteInput.addEventListener('keydown', (e) => {
   }
 });
 ui.selAsk.addEventListener('click', openAsk);
+ui.selStrike.addEventListener('click', () => markSelection('delete'));
+ui.selReplace.addEventListener('click', () => openMarkInput('replace'));
+ui.selInsert.addEventListener('click', () => openMarkInput('insert'));
+ui.selHighlight.addEventListener('click', () => markSelection('highlight'));
+ui.selComment.addEventListener('click', () => openMarkInput('comment'));
 ui.selDictate.addEventListener('click', startDictation);
 // The pill keeps the page selection and stays out of the selection bar's pointer handling.
 ui.dictatePill.addEventListener('mousedown', (e) => {
@@ -3438,8 +3528,10 @@ ui.selInput.addEventListener('keydown', (e) => {
   e.stopPropagation(); // keep global shortcuts (Escape, zoom) out of the input
   if (e.key === 'Enter' && !e.isComposing) {
     e.preventDefault();
-    const instruction = ui.selInput.value.trim();
-    if (instruction) sendToAgent('ask', instruction);
+    const text = ui.selInput.value.trim();
+    if (!text) return;
+    if (selInputMode === 'ask') sendToAgent('ask', text);
+    else markSelection(selInputMode, text);
   } else if (e.key === 'Escape') {
     e.preventDefault();
     cancelAsk();

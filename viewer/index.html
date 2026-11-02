@@ -113,6 +113,13 @@
         <button id="sel-rewrite" type="button" hidden title="Alternative wordings for this passage; pick one to replace it in the source (key R)">Rewrite…</button>
         <button id="sel-ask" type="button" title="Tell omp what to do with this passage (type an instruction, Enter sends)">Ask omp…</button>
         <button id="sel-dictate" type="button" hidden title="Speak text to go after this passage; it lands as a suggestion in ✎ Review (key D)">🎙 Dictate</button>
+        <span id="sel-review" role="group" aria-label="Review marks" hidden>
+          <button id="sel-strike" type="button" title="Strike it out: your tracked deletion (key ⌫)"><s>Strike</s></button>
+          <button id="sel-replace" type="button" title="Replace it with text you type: your tracked replacement (key E)">Replace…</button>
+          <button id="sel-insert" type="button" title="Insert text you type after it: your tracked addition (key I)">Insert…</button>
+          <button id="sel-highlight" type="button" title="Highlight it (key H)">Highlight</button>
+          <button id="sel-comment" type="button" title="Highlight it with a comment you type (key C)">Comment…</button>
+        </span>
       </div>
       <input id="sel-input" type="text" hidden autocomplete="off" spellcheck="false"
         placeholder="Tell omp what to do with this passage" title="Enter sends to omp, Escape cancels">

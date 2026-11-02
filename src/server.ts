@@ -10,7 +10,8 @@ import { type Diagnostic, formatDiagnostic } from "./diagnostics.ts";
 import { SearchIndex } from "./search.ts";
 import { SyncTex } from "./synctex.ts";
 import { lineEndOffset, type LocatedRange, locateRange, locateSelection } from "./locate.ts";
-import { type Hunk, writeSuggestions } from "./proofread.ts";
+import { isMarkKind, markHunk } from "./marks.ts";
+import { changesLoaded, type Hunk, writeSuggestions } from "./proofread.ts";
 import { offsetOf, type Position, positionOf, type RewriteRequest, type RewriteResult, widenToSentences } from "./rewrite.ts";
 import { pcm16, type SpeechStatus, spokenLatex } from "./speech.ts";
 import type { TernKey } from "./ternplugin.ts";
@@ -65,6 +66,8 @@ export interface HistoryApi {
 export interface ReviewApi {
   changes(): { authors: ReviewAuthor[]; items: unknown[] };
   resolve(ids: string[], decision: "accept" | "reject"): Promise<number>;
+  /** The author the viewer's review marks carry. */
+  me: ReviewAuthor;
 }
 
 /** omp's local speech model, injected so the server stays testable. */
@@ -242,6 +245,7 @@ export async function startServer(o: ServerOptions): Promise<DevServer> {
           review: Boolean(o.review),
           proofread: Boolean(o.proofread),
           rewrite: Boolean(o.rewrite),
+          ...(o.review ? { reviewer: o.review.me } : {}),
           ...(o.keys ? { keys: o.keys } : {}),
           ...(o.dictation ? { dictation: await speechReady(o.dictation) } : {}),
         };
@@ -389,6 +393,32 @@ export async function startServer(o: ServerOptions): Promise<DevServer> {
         if (r.reverted) return send(res, 409, { error: `not applied: ${r.reverted}` });
         if (!r.hunks.length) return send(res, 409, { error: `${rel} changed meanwhile; rewrite again` });
         return send(res, 200, { file: rel, line: from.line });
+      }
+      // A review mark on a PDF selection: the user's tracked change (deleted, replaced, added, highlighted with a
+      // comment) in the source, checkpointed first and undone when it breaks a build, like other server edits.
+      if (route === "POST /review/mark") {
+        if (!o.review) return send(res, 404, { error: "review unavailable" });
+        const { page, start, text, kind, input } = body;
+        if (typeof page !== "number" || !isPoint(start) || typeof text !== "string" || !isMarkKind(kind)) {
+          return send(res, 400, { error: "page, start {x,y}, text and kind (delete, replace, insert, highlight, comment) required" });
+        }
+        const loc = await selectionRange(doc, page, start, text);
+        if (!loc) return send(res, 404, { error: "couldn't find that text in the source" });
+        // Insertion needs only the end to be exact; the other marks wrap the selection, so both ends.
+        if (!(kind === "insert" ? loc.endExact : loc.startExact && loc.endExact)) {
+          return send(res, 422, { error: "the selection begins or ends in text a macro typesets (a citation, \\LaTeX); select running text" });
+        }
+        const src = readFileSync(join(cfg.dir, loc.file), "utf8");
+        const hunk = markHunk(loc.file, src, loc.start, loc.end, kind, typeof input === "string" ? input : "");
+        if (typeof hunk === "string") return send(res, 422, { error: hunk });
+        if (hunk.highlight && !changesLoaded(cfg, [loc.file])) {
+          return send(res, 409, { error: "highlights and comments need the changes package: add \\usepackage{changes} to the preamble" });
+        }
+        const me = o.review.me;
+        const r = await writeSuggestions(cfg, [hunk], new Map([[loc.file, src]]), { author: me.id, direct: false, build: () => builder.request(), label: `${kind} by ${me.id}` });
+        if (r.reverted) return send(res, 409, { error: `not marked: ${r.reverted}` });
+        if (!r.hunks.length) return send(res, 409, { error: `${loc.file} changed meanwhile; select again` });
+        return send(res, 200, { file: loc.file, line: hunk.line, author: me.id, pending: r.pending === true });
       }
       if (route === "POST /open") {
         const abs = inProject(body.file);

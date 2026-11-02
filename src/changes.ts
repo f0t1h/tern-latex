@@ -1,12 +1,13 @@
 // Review markup with the LaTeX `changes` package: scanning, accept/reject rewriting,
 // the generated author setup, and importing PDF annotations as \comment[id=…]{…}.
 
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { loadPdfjs, PDF_DATA } from "./render.ts";
-import { type Config, CONFIG_FILE, type DocConfig, docPaths, posix, UsageError } from "./config.ts";
+import { type Config, CONFIG_FILE, type DocConfig, docPaths, posix, type ReviewAuthor, UsageError } from "./config.ts";
 import { compile } from "./engine.ts";
 import { SyncTex } from "./synctex.ts";
 import { plainText } from "./locate.ts";
@@ -425,9 +426,10 @@ export function escapeLatex(s: string): string {
   return s.replace(/[\\{}$&#_%^~]/g, (c) => LATEX_SPECIALS[c]);
 }
 
-/** The content of REVIEW_SETUP for this config. */
-export function renderReviewSetup(cfg: Config): string {
+/** The content of REVIEW_SETUP for this config; ME (the viewer's reviewer) is defined too when [review] lacks it. */
+export function renderReviewSetup(cfg: Config, me?: ReviewAuthor): string {
   const authors = [...cfg.review.authors];
+  if (me && !authors.some((a) => a.id === me.id)) authors.push(me);
   const taken = new Set(authors.flatMap((a) => (a.color ? [a.color] : [])));
   for (const b of BUILTIN_AUTHORS) {
     if (!authors.some((a) => a.id === b.id)) authors.push({ id: b.id, name: b.name, color: taken.has(b.color) ? undefined : b.color });
@@ -448,11 +450,37 @@ export function renderReviewSetup(cfg: Config): string {
 /** Writes REVIEW_SETUP when its content changed; true if it wrote. */
 export async function writeReviewSetup(cfg: Config): Promise<boolean> {
   const path = join(cfg.dir, REVIEW_SETUP);
-  const content = renderReviewSetup(cfg);
+  const content = renderReviewSetup(cfg, reviewer(cfg));
   if (existsSync(path) && readFileSync(path, "utf8") === content) return false;
   await mkdir(dirname(path), { recursive: true });
   await writeAtomic(path, content);
   return true;
+}
+
+/** git's user.name per project folder, read once. */
+const gitNames = new Map<string, string>();
+
+/**
+ * The author the viewer's review marks carry: `[review] me`, else the initials of git's user.name ("Ana Kim" is
+ * AK), else "me". Named as in [review] authors when listed there.
+ */
+export function reviewer(cfg: Config): ReviewAuthor {
+  const listed = (id: string) => cfg.review.authors.find((a) => a.id === id);
+  if (cfg.review.me) return listed(cfg.review.me) ?? { id: cfg.review.me, name: cfg.review.me };
+  let name = gitNames.get(cfg.dir);
+  if (name === undefined) {
+    const r = spawnSync("git", ["config", "user.name"], { cwd: cfg.dir, encoding: "utf8", timeout: 2000 });
+    name = r.status === 0 ? r.stdout.trim() : "";
+    gitNames.set(cfg.dir, name);
+  }
+  const id = initials(name) || "me";
+  return listed(id) ?? { id, name: name || "me" };
+}
+
+/** Up to three initials of NAME, as an author id: "Fatma Öz-Kaya" is FOK. */
+export function initials(name: string): string {
+  const letters = name.normalize("NFKD").replace(/\p{M}/gu, "").split(/[\s.\-_]+/).map((w) => /[A-Za-z0-9]/.exec(w)?.[0] ?? "");
+  return letters.join("").toUpperCase().slice(0, 3);
 }
 
 // ---------------------------------------------------------------------------
