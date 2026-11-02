@@ -78,8 +78,11 @@ export interface Hunk {
   new: string;
   why: string;
   line: number;
-  /** Marks `old` without changing it: `\highlight`, with `why` as its comment. */
-  highlight?: boolean;
+  /**
+   * A mark that changes no text: `\highlight` of `old`, or a `\comment` with `why` at `start` (old and new empty).
+   * A comment goes after the passage rather than around it: a long `\highlight` (a coloured box) can't break lines.
+   */
+  markup?: "highlight" | "comment";
 }
 
 export interface Target {
@@ -280,11 +283,16 @@ export function hunksFor(p: Paragraph, s: Suggestion, spans: [number, number][])
 export function applyHunks(text: string, hunks: Hunk[], direct: boolean, author: string): string {
   let out = text;
   for (const h of [...hunks].sort((a, b) => b.start - a.start)) {
-    const opts = `id=${author}${h.why ? `,comment={${escapeLatex(h.why)}}` : ""}`;
-    const markup = h.highlight
-      ? direct
-        ? h.old
-        : `\\highlight[${opts}]{${h.old}}`
+    const opts = `id=${author}${h.why && h.markup !== "comment" ? `,comment={${escapeLatex(h.why)}}` : ""}`;
+    const markup =
+      h.markup === "comment"
+        ? direct
+          ? ""
+          : `\\comment[id=${author}]{${escapeLatex(h.why)}}`
+        : h.markup === "highlight"
+          ? direct
+            ? h.old
+            : `\\highlight[${opts}]{${h.old}}`
       : direct
         ? h.new
         : h.old && h.new

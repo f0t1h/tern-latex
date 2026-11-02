@@ -59,5 +59,9 @@ export function markHunk(file: string, src: string, start: number, end: number, 
   if (problem) return problem;
   if (kind === "delete") return { file, start, end, old, new: "", why: "", line };
   if (kind === "replace") return typed === old ? "the new text is the same as the old" : { file, start, end, old, new: typed, why: "", line };
-  return { file, start, end, old, new: old, why: kind === "comment" ? text.trim() : "", line, highlight: true };
+  if (kind === "comment") {
+    // After the passage: wrapping it (\highlight with a comment) would box it on one line, past the margin.
+    return { file, start: end, end, old: "", new: "", why: text.trim(), line: src.slice(0, end).split("\n").length, markup: "comment" };
+  }
+  return { file, start, end, old, new: old, why: "", line, markup: "highlight" };
 }

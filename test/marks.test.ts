@@ -38,7 +38,7 @@ describe("review marks", () => {
     expect(mark(src, "fox", "insert", "and its friend")).toBe("The quick brown fox\\added[id=AK]{ and its friend} jumps.\n");
     expect(mark(src, "fox", "insert", ", sadly,")).toBe("The quick brown fox\\added[id=AK]{, sadly,} jumps.\n");
     expect(mark(src, "brown fox", "highlight")).toBe("The quick \\highlight[id=AK]{brown fox} jumps.\n");
-    expect(mark(src, "brown fox", "comment", "colour? 50% sure")).toBe("The quick \\highlight[id=AK,comment={colour? 50\\% sure}]{brown fox} jumps.\n");
+    expect(mark(src, "brown fox", "comment", "colour? 50% sure")).toBe("The quick brown fox\\comment[id=AK]{colour? 50\\% sure} jumps.\n");
   });
 
   test("typed text is escaped unless it is LaTeX", () => {
@@ -106,5 +106,29 @@ describe("locating a selection", () => {
     expect(at("the mat", "The cat sat on", ", and later")).toBe("at sat on the mat, and ");
     // Without context: the first on the line, as before.
     expect(locateSelection(cfg, doc, "the mat", hint)?.start).toBe(src.indexOf("the mat"));
+  });
+
+  test("goes through the user's text macros, citations, references and math, covering a command it starts or ends in", () => {
+    const src = [
+      "\\newcommand{\\tool}{\\textsc{Gallifrey}\\xspace}",
+      "\\begin{document}",
+      "\\tool{} completed the assembly faster, as \\autoref{tab:x} shows, and $x^2$ grows as \\citet{knuth} said.",
+      "\\end{document}",
+      "",
+    ].join("\n");
+    const cfg = project("", src);
+    const doc = cfg.docs[0];
+    const at = (selection: string) => {
+      const loc = locateSelection(cfg, doc, selection, { file: "main.tex", line: 3 });
+      return loc ? src.slice(loc.start, loc.end) : null;
+    };
+    expect(at("Gallifrey completed the assembly")).toBe("\\tool{} completed the assembly");
+    expect(at("faster, as Table 2 shows")).toBe("faster, as \\autoref{tab:x} shows");
+    expect(at("x2 grows as Knuth (1984) said.")).toBe("$x^2$ grows as \\citet{knuth} said.");
+    expect(at("nothing like this")).toBeNull();
+
+    const start = src.indexOf("\\tool{}");
+    const h = markHunk("main.tex", src, start, start + "\\tool{} completed".length, "delete", "");
+    expect(typeof h === "string" ? h : applyHunks(src, [h], false, "AK")).toContain("\\deleted[id=AK]{\\tool{} completed} the assembly");
   });
 });

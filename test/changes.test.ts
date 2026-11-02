@@ -132,12 +132,12 @@ test("PDF annotations map to their source lines with the marked text", async () 
 test("review setup passes draft/final before the package loads and gives omp a distinct colour", () => {
   const cfg = (review: Config["review"]): Config => ({ review }) as Config;
   const draft = renderReviewSetup(cfg({ authors: [{ id: "AK", name: "Ana K & Co", color: "violet" }, { id: "BW", name: "Bo W" }], final: false }));
-  assert.match(draft, /^\\PassOptionsToPackage\{draft\}\{changes\}$/m);
+  assert.match(draft, /^\\PassOptionsToPackage\{draft,highlightmarkup=uwave\}\{changes\}$/m);
   assert.match(draft, /\\definechangesauthor\[name=\{Ana K \\& Co\}, color=violet\]\{AK\}/);
   const colors = [...draft.matchAll(/color=([^\]]+)\]\{(\w+)\}/g)].map((m) => [m[2], m[1]]);
   assert.deepEqual(colors.map((c) => c[0]), ["AK", "BW", "omp", "proof", "dictation"]);
   assert.equal(new Set(colors.map((c) => c[1])).size, 5, `colours must differ: ${JSON.stringify(colors)}`);
-  assert.match(renderReviewSetup(cfg({ authors: [], final: true })), /^\\PassOptionsToPackage\{final\}\{changes\}$/m);
+  assert.match(renderReviewSetup(cfg({ authors: [], final: true })), /^\\PassOptionsToPackage\{final,highlightmarkup=uwave\}\{changes\}$/m);
 });
 
 test("texFiles lists project sources as /-paths, skipping outdir, dot directories and ignored subtrees only", () => {

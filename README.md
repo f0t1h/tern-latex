@@ -322,9 +322,16 @@ Mark edits with `\added[id=AK]{…}`, `\deleted[id=AK]{…}`, `\replaced[id=AK]{
 Or mark the PDF itself: select text in the viewer and use the action bar's review tools (Strike,
 Replace…, Insert…, Highlight, Comment…). The marks carry your id: `me = "AK"` under `[review]` if set,
 else the initials of your git `user.name`. Leave `me` out of a `ternlatex.toml` others share, so each
-person's marks carry their own initials. A mark must start and end in plain text: a selection that
-splits a `{…}` group, math or a citation is refused with a reason. Without the `changes` package,
-strikes, replacements and insertions wait in ✎ Review as suggestions; highlights and comments need it.
+person's marks carry their own initials.
+
+A comment goes in as `\comment[id=AK]{…}` right after the selected passage, so the passage keeps its line
+breaks. A highlight is a wavy underline in your colour, which breaks across lines (the changes package's
+default, a coloured box, can't). Selections go through macros: text your own macros typeset
+(`\newcommand{\tool}{\textsc{Gallifrey}}`), citations, `\ref`/`\autoref` numbers and math all match, and a
+mark that starts or ends in one wraps the whole command (`\deleted[id=AK]{\tool completed}`). A selection that
+splits a `{…}` group in the source (half of an `\emph{…}`) is refused with a reason. Without the `changes`
+package, strikes, replacements and insertions wait in ✎ Review as suggestions; highlights and comments
+need it.
 
 `ternlatex comments import annotated.pdf --author AK` turns a reviewer's PDF annotations (sticky notes,
 highlights) into `\comment`s on the matching source lines. `/skill:review` has omp work through the

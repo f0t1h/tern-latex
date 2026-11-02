@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
+import { type Alignment, align, pdfWords, type Token, tokenize, userMacros } from "./align.ts";
 import { type Config, type DocConfig, docPaths } from "./config.ts";
 import { parseDeps } from "./engine.ts";
 
@@ -98,53 +99,74 @@ export interface SelectionContext {
 
 const CONTEXT_WORDS = 8;
 
-function wordsOf(s: string): string[] {
-  return (s.normalize("NFKC").toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []);
-}
-
-/** How many of CONTEXT's words sit next to HAY[start, end) as they do in the PDF: up to 8 on each side. */
-function contextFit(hay: string, start: number, end: number, context: SelectionContext): number {
-  const near = (a: string[], b: string[]) => {
+/** How many of CONTEXT's words sit next to the aligned tokens as they do in the PDF: up to 8 on each side. */
+function contextFit(tokens: Token[], a: Alignment, context: SelectionContext): number {
+  const near = (x: string[], y: string[]) => {
     let n = 0;
-    while (n < a.length && n < b.length && a[n] === b[n]) n++;
+    while (n < x.length && n < y.length && x[n] === y[n]) n++;
     return n;
   };
-  const before = near(wordsOf(hay.slice(Math.max(0, start - 200), start)).reverse().slice(0, CONTEXT_WORDS), wordsOf(context.before).reverse().slice(0, CONTEXT_WORDS));
-  const after = near(wordsOf(hay.slice(end, end + 200)).slice(0, CONTEXT_WORDS), wordsOf(context.after).slice(0, CONTEXT_WORDS));
+  const wordsAt = (from: number, step: number) => {
+    const out: string[] = [];
+    for (let k = from; k >= 0 && k < tokens.length && out.length < CONTEXT_WORDS; k += step) {
+      const w = tokens[k].word;
+      if (w !== null) out.push(w);
+    }
+    return out;
+  };
+  const before = near(wordsAt(a.first - 1, -1), pdfWords(context.before).reverse().slice(0, CONTEXT_WORDS));
+  const after = near(wordsAt(a.last + 1, 1), pdfWords(context.after).slice(0, CONTEXT_WORDS));
   return before + after;
 }
 
 /**
- * Where SELECTION (as the viewer's text layer reports it) is in the document's sources: the occurrence whose
- * surrounding words best match CONTEXT (the text around it in the PDF), then the one nearest HINT (the SyncTeX
- * guess, a line at best: the same words can repeat on it); null when the words are not found. A single word is
- * only looked for as a whole word in HINT's file: anywhere else it would match too often to mean anything.
+ * Where SELECTION (as the viewer's text layer reports it) is in the document's sources, word by word through
+ * macros (src/align.ts): a selection that begins or ends in what a command typesets (\tool, a citation, math)
+ * covers the command. Of several matches: the one whose surrounding words best match CONTEXT (the text around
+ * it in the PDF), then the one with fewest words left to commands, then the one nearest HINT (the SyncTeX guess,
+ * a line at best). Null when the words are not found. A single word is only looked for in HINT's file: anywhere
+ * else it would match too often to mean anything.
  */
 export function locateSelection(cfg: Config, doc: DocConfig, selection: string, hint?: { file: string; line: number }, context?: SelectionContext): Located | null {
-  const words = normalise(selection).split(" ").filter(Boolean);
+  const words = pdfWords(selection);
   const single = words.length === 1;
   if (!words.length || (single && !hint)) return null;
-  const head = words.slice(0, Math.min(6, words.length)).join(" ");
-  const tail = words.slice(-Math.min(6, words.length)).join(" ");
-  const letter = /[\p{L}\p{N}]/u;
-  let best: (Located & { distance: number; fit: number }) | null = null;
+  const texts = new Map<string, string>();
   for (const file of docTexFiles(cfg, doc)) {
-    if (single && file !== hint?.file) continue;
     const abs = join(cfg.dir, file);
-    if (!existsSync(abs)) continue;
-    const src = readFileSync(abs, "utf8");
-    const plain = plainText(src);
-    const hay = plain.text.normalize("NFKC");
-    for (let s = hay.indexOf(head); s >= 0; s = hay.indexOf(head, s + 1)) {
-      const t = hay.indexOf(tail, s);
-      if (t < 0) continue;
-      if (single && (letter.test(hay[s - 1] ?? "") || letter.test(hay[s + head.length] ?? ""))) continue;
-      const last = plain.at[Math.min(t + tail.length - 1, plain.at.length - 1)];
-      const from = lineAt(src, plain.at[s]);
-      const to = lineAt(src, last);
+    if (existsSync(abs)) texts.set(file, readFileSync(abs, "utf8"));
+  }
+  const macros = userMacros([...texts.values()]);
+  // Punctuation the selection starts or ends with (a closing parenthesis, a full stop) belongs to it in the source too.
+  const text = normalise(selection);
+  const lead = /^[^\p{L}\p{N}\s]+/u.exec(text)?.[0] ?? "";
+  const trail = /[^\p{L}\p{N}\s]+$/u.exec(text)?.[0] ?? "";
+  const raw = text.match(/[\p{L}\p{N}]+/gu) ?? [];
+  let best: (Located & { rank: number[] }) | null = null;
+  for (const [file, src] of texts) {
+    if (single && file !== hint?.file) continue;
+    const tokens = tokenize(src, macros);
+    for (const a of align(words, tokens)) {
+      // Most of it must be the source's own words: commands can't stand for everything.
+      const matched = words.length - a.loose;
+      if (matched < 1 || a.loose > matched + 2) continue;
+      let start = tokens[a.first].start;
+      let end = tokens[a.last].end;
+      for (let k = lead.length - 1; k >= 0 && src[start - 1] === lead[k]; k--) start--;
+      for (const c of trail) {
+        if (src[end] === c) end++;
+        else if (src[end] === "\\" && src[end + 1] === c) end += 2; // \% \&
+        else break;
+      }
+      const from = lineAt(src, start);
       const distance = hint && hint.file === file ? Math.abs(from - hint.line) : hint ? 1e6 : 0;
-      const fit = context ? contextFit(hay, s, t + tail.length, context) : 0;
-      if (!best || fit > best.fit || (fit === best.fit && distance < best.distance)) best = { file, from, to, start: plain.at[s], end: last + 1, distance, fit };
+      const fit = context ? contextFit(tokens, a, context) : 0;
+      // Case breaks ties: "the" before "The".
+      const cased = Number(src.startsWith(raw[0] ?? "", tokens[a.first].start)) + Number(src.slice(0, tokens[a.last].end).endsWith(raw.at(-1) ?? ""));
+      // Better context, then fewer words left to commands, then matching case, then nearer SyncTeX's line.
+      const rank = [-fit, a.loose, -cased, distance];
+      const k = best ? rank.findIndex((v, n) => v !== best?.rank[n]) : 0;
+      if (!best || (k >= 0 && rank[k] < best.rank[k])) best = { file, from, to: lineAt(src, end - 1), start, end, rank };
     }
   }
   return best ? { file: best.file, from: best.from, to: best.to, start: best.start, end: best.end } : null;

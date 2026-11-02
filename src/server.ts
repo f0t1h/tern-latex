@@ -412,7 +412,7 @@ export async function startServer(o: ServerOptions): Promise<DevServer> {
         const src = readFileSync(join(cfg.dir, loc.file), "utf8");
         const hunk = markHunk(loc.file, src, loc.start, loc.end, kind, typeof input === "string" ? input : "");
         if (typeof hunk === "string") return send(res, 422, { error: hunk });
-        if (hunk.highlight && !changesLoaded(cfg, [loc.file])) {
+        if (hunk.markup && !changesLoaded(cfg, [loc.file])) {
           return send(res, 409, { error: "highlights and comments need the changes package: add \\usepackage{changes} to the preamble" });
         }
         const me = o.review.me;
