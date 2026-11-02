@@ -1276,6 +1276,32 @@ function pageAtClient(x, y, hint) {
   return state.pages.find(inside) ?? null;
 }
 
+/** Characters of text-layer text kept on each side of a selection: enough words to tell repeats apart. */
+const CONTEXT_CHARS = 160;
+
+/**
+ * The text around RANGE in its text layer (line breaks as spaces): the server matches it against the source to
+ * pick the right one of several occurrences of the selected words, often on one source line.
+ */
+function selectionContext(range, layer) {
+  let text = '';
+  let start = -1;
+  let end = -1;
+  const walker = document.createTreeWalker(layer, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    if (n.nodeType === Node.ELEMENT_NODE) {
+      if (n.tagName === 'BR') text += ' ';
+      continue;
+    }
+    if (n === range.startContainer) start = text.length + range.startOffset;
+    if (n === range.endContainer) end = text.length + range.endOffset;
+    text += n.data;
+  }
+  if (start < 0 || end < start) return { before: '', after: '' };
+  const flat = (s) => s.replace(/\s+/g, ' ');
+  return { before: flat(text.slice(Math.max(0, start - CONTEXT_CHARS), start)), after: flat(text.slice(end, end + CONTEXT_CHARS)) };
+}
+
 /** @returns {SelInfo|null} */
 function readSelection(s) {
   if (!s || s.isCollapsed || !s.rangeCount) return null;
@@ -1304,6 +1330,7 @@ function readSelection(s) {
     start: clientToPdf(p, first.left, mid(first)),
     end: clientToPdf(p, last.right, mid(last)),
     text,
+    ...selectionContext(range, startEl.closest('.textLayer')),
     top: clientToPdf(p, first.left, first.top).y,
     bottom: clientToPdf(p, first.left, first.bottom).y,
     range: range.cloneRange(),
@@ -1449,13 +1476,13 @@ function setSelBusy(on) {
 
 function selSource() {
   const info = state.sel;
-  if (info) reverseSearch({ page: info.page, x: info.start.x, y: info.start.y, text: info.text });
+  if (info) reverseSearch({ page: info.page, x: info.start.x, y: info.start.y, text: info.text, before: info.before, after: info.after });
 }
 
 async function sendToAgent(action, instruction) {
   const info = state.sel;
   if (!info || selBusy) return;
-  const body = { action, page: info.page, start: info.start, end: info.end, text: info.text };
+  const body = { action, page: info.page, start: info.start, end: info.end, text: info.text, before: info.before, after: info.after };
   if (instruction) body.instruction = instruction;
   // Proofread runs on the server (one no-reasoning omp call per paragraph) when it can, not in the omp block.
   const direct = action === 'proofread' && state.caps?.proofread;
@@ -1498,7 +1525,7 @@ async function markSelection(kind, input = '') {
   if (!info || selBusy) return;
   setSelBusy(true);
   try {
-    const res = await postJSON('/review/mark', withDoc({ page: info.page, start: info.start, end: info.end, text: info.text, kind, input }));
+    const res = await postJSON('/review/mark', withDoc({ page: info.page, start: info.start, end: info.end, text: info.text, before: info.before, after: info.after, kind, input }));
     const data = await res.json().catch(() => null);
     if (!res.ok) {
       toast(data?.error ?? `Marking failed (${res.status})`, 4000);
@@ -1632,9 +1659,9 @@ async function askRewrite() {
   const instruction = ui.rewriteInput.value.trim();
   rewriteStatus('Asking omp for alternatives…', 'busy');
   renderRewrite();
-  const { page, start, end, text } = r.info;
+  const { page, start, end, text, before, after } = r.info;
   try {
-    const res = await postJSON('/rewrite', withDoc({ page, start, end, text, ...(instruction ? { instruction } : {}) }));
+    const res = await postJSON('/rewrite', withDoc({ page, start, end, text, before, after, ...(instruction ? { instruction } : {}) }));
     const data = await res.json().catch(() => null);
     if (rw !== r || gen !== r.gen) return;
     if (!res.ok) {
@@ -1894,7 +1921,7 @@ async function finishDictation() {
   stopCapture(r);
   setPill('busy');
   try {
-    const body = { page: r.info.page, start: r.info.start, end: r.info.end, text: r.info.text, audio: pcmBase64(r), sampleRate: DICTATE_RATE };
+    const body = { page: r.info.page, start: r.info.start, end: r.info.end, text: r.info.text, before: r.info.before, after: r.info.after, audio: pcmBase64(r), sampleRate: DICTATE_RATE };
     const res = await postJSON('/dictate', r.doc ? { ...body, doc: r.doc } : body);
     const data = await res.json().catch(() => null);
     if (!res.ok) {

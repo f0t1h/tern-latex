@@ -76,7 +76,7 @@ describe("reviewer", () => {
   });
 });
 
-describe("locating a single selected word", () => {
+describe("locating a selection", () => {
   const main = "\\begin{document}\nThe theory of the thermal bath.\nLater the end.\n\\end{document}\n";
 
   test("is found as a whole word near SyncTeX's line, never inside another word", () => {
@@ -89,5 +89,22 @@ describe("locating a single selected word", () => {
     expect(first?.from).toBe(2);
     expect(main.slice(first?.start ?? 0, (first?.start ?? 0) + 10)).toBe("the therma");
     expect(locateSelection(cfg, doc, "the", undefined)).toBeNull();
+  });
+
+  test("the words around it in the PDF pick the right one of several occurrences on the same source line", () => {
+    const line = "The cat sat on the mat, and later the cat \\emph{ran} off the mat again.";
+    const src = `\\begin{document}\n${line}\n\\end{document}\n`;
+    const cfg = project("", src);
+    const doc = cfg.docs[0];
+    const hint = { file: "main.tex", line: 2 };
+    const at = (selection: string, before: string, after: string) => {
+      const loc = locateSelection(cfg, doc, selection, hint, { before, after });
+      return loc ? src.slice(loc.start - 10, loc.end + 6) : null;
+    };
+    expect(at("the cat", "on the mat, and later", "ran off the mat")).toBe("and later the cat \\emph");
+    expect(at("the mat", "and later the cat ran off", "again.")).toBe("{ran} off the mat again");
+    expect(at("the mat", "The cat sat on", ", and later")).toBe("at sat on the mat, and ");
+    // Without context: the first on the line, as before.
+    expect(locateSelection(cfg, doc, "the mat", hint)?.start).toBe(src.indexOf("the mat"));
   });
 });

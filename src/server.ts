@@ -9,7 +9,7 @@ import { type DocConfig, docPaths, paths, posix, type ReviewAuthor } from "./con
 import { type Diagnostic, formatDiagnostic } from "./diagnostics.ts";
 import { SearchIndex } from "./search.ts";
 import { SyncTex } from "./synctex.ts";
-import { lineEndOffset, type LocatedRange, locateRange, locateSelection } from "./locate.ts";
+import { lineEndOffset, type LocatedRange, locateRange, locateSelection, type SelectionContext } from "./locate.ts";
 import { isMarkKind, markHunk } from "./marks.ts";
 import { changesLoaded, type Hunk, writeSuggestions } from "./proofread.ts";
 import { offsetOf, type Position, positionOf, type RewriteRequest, type RewriteResult, widenToSentences } from "./rewrite.ts";
@@ -184,12 +184,13 @@ export async function startServer(o: ServerOptions): Promise<DevServer> {
     start: { x: number; y: number },
     end: { x: number; y: number },
     text: unknown,
+    context?: SelectionContext,
   ): Promise<{ file: string; from: number; to: number; end?: number } | null> => {
     const st = await loadSynctex(doc);
     const a = st?.reverse(page, start.x, start.y) ?? null;
     const b = st?.reverse(page, end.x, end.y) ?? null;
     const hint = a ? { file: sourceRel(a.file), line: a.line } : undefined;
-    const found = typeof text === "string" ? locateSelection(cfg, doc, text, hint) : null;
+    const found = typeof text === "string" ? locateSelection(cfg, doc, text, hint, context) : null;
     if (found) return found;
     if (!a) return null;
     // A selection crossing into another file (an \input boundary) is anchored at its start.
@@ -197,9 +198,9 @@ export async function startServer(o: ServerOptions): Promise<DevServer> {
     return { file: sourceRel(a.file), from, to };
   };
   /** The source range of a PDF selection's text for a rewrite (locateRange), SyncTeX's guess breaking ties. */
-  const selectionRange = async (doc: DocConfig, page: number, start: { x: number; y: number }, text: string): Promise<LocatedRange | null> => {
+  const selectionRange = async (doc: DocConfig, page: number, start: { x: number; y: number }, text: string, context?: SelectionContext): Promise<LocatedRange | null> => {
     const a = (await loadSynctex(doc))?.reverse(page, start.x, start.y) ?? null;
-    return locateRange(cfg, doc, text, a ? { file: sourceRel(a.file), line: a.line } : undefined);
+    return locateRange(cfg, doc, text, a ? { file: sourceRel(a.file), line: a.line } : undefined, context);
   };
   /** Status of omp's speech model: checked at start in the background, again on a request while not ready (`omp setup speech` needs no restart). */
   let speech = o.dictation?.status();
@@ -289,7 +290,7 @@ export async function startServer(o: ServerOptions): Promise<DevServer> {
         if (action === "ask" && (typeof instruction !== "string" || !instruction.trim())) return send(res, 400, { error: "ask needs an instruction" });
         const submit = o.agent();
         if (!submit) return send(res, 409, { error: NO_AGENT });
-        const loc = await selectionSource(doc, page, start, end, text);
+        const loc = await selectionSource(doc, page, start, end, text, contextOf(body));
         if (!loc) return send(res, 404, { error: "no source for that selection" });
         const { file, from, to } = loc;
         const quote = typeof text === "string" ? text.replace(/\s+/g, " ").trim().slice(0, 1500) : "";
@@ -314,7 +315,7 @@ export async function startServer(o: ServerOptions): Promise<DevServer> {
         const status = await speechReady(o.dictation);
         if (!status.ready) return send(res, 409, { error: status.hint ?? "omp's speech model is not ready" });
         const transcript = await o.dictation.transcribe(rec.samples, rec.sampleRate);
-        const loc = await selectionSource(doc, page, start, end, text);
+        const loc = await selectionSource(doc, page, start, end, text, contextOf(body));
         if (!loc) return send(res, 404, { error: "no source for that selection" });
         const abs = join(cfg.dir, loc.file);
         if (!existsSync(abs)) return send(res, 404, { error: `${loc.file} does not exist` });
@@ -343,7 +344,7 @@ export async function startServer(o: ServerOptions): Promise<DevServer> {
         if (proofreading) return send(res, 409, { error: "a proofread is already running" });
         const { page, start, end } = body;
         if (typeof page !== "number" || !isPoint(start) || !isPoint(end)) return send(res, 400, { error: "page, start {x,y}, end {x,y} required" });
-        const loc = await selectionSource(doc, page, start, end, body.text);
+        const loc = await selectionSource(doc, page, start, end, body.text, contextOf(body));
         if (!loc) return send(res, 404, { error: "no source for that selection" });
         proofreading = true;
         try {
@@ -359,7 +360,7 @@ export async function startServer(o: ServerOptions): Promise<DevServer> {
         if (!o.rewrite) return send(res, 404, { error: "rewriting unavailable" });
         const { page, start, text, instruction } = body;
         if (typeof page !== "number" || !isPoint(start) || typeof text !== "string") return send(res, 400, { error: "page, start {x,y} and text required" });
-        const loc = await selectionRange(doc, page, start, text);
+        const loc = await selectionRange(doc, page, start, text, contextOf(body));
         if (!loc) return send(res, 404, { error: "couldn't find those words in the source; select at least two words of running text" });
         const abs = join(cfg.dir, loc.file);
         const src = readFileSync(abs, "utf8");
@@ -402,7 +403,7 @@ export async function startServer(o: ServerOptions): Promise<DevServer> {
         if (typeof page !== "number" || !isPoint(start) || typeof text !== "string" || !isMarkKind(kind)) {
           return send(res, 400, { error: "page, start {x,y}, text and kind (delete, replace, insert, highlight, comment) required" });
         }
-        const loc = await selectionRange(doc, page, start, text);
+        const loc = await selectionRange(doc, page, start, text, contextOf(body));
         if (!loc) return send(res, 404, { error: "couldn't find that text in the source" });
         // Insertion needs only the end to be exact; the other marks wrap the selection, so both ends.
         if (!(kind === "insert" ? loc.endExact : loc.startExact && loc.endExact)) {
@@ -430,7 +431,7 @@ export async function startServer(o: ServerOptions): Promise<DevServer> {
         const { page, x, y } = body;
         if (typeof page !== "number" || typeof x !== "number" || typeof y !== "number") return send(res, 400, { error: "page, x, y must be numbers" });
         const point = { x, y };
-        const loc = await selectionSource(doc, page, point, point, body.text);
+        const loc = await selectionSource(doc, page, point, point, body.text, contextOf(body));
         if (!loc) return send(res, 404, { error: "no source at that point" });
         await o.open(join(cfg.dir, loc.file), loc.from);
         return send(res, 200, { file: loc.file, line: loc.from });
@@ -574,6 +575,12 @@ async function sendAsset(res: ServerResponse, rel: string): Promise<void> {
 
 function isPoint(v: unknown): v is { x: number; y: number } {
   return Boolean(v && typeof v === "object" && "x" in v && "y" in v && typeof v.x === "number" && typeof v.y === "number");
+}
+
+/** The text around a selection that the viewer sends with it (`before`, `after`), when it does. */
+function contextOf(body: Record<string, unknown>): SelectionContext | undefined {
+  const { before, after } = body;
+  return typeof before === "string" && typeof after === "string" ? { before, after } : undefined;
 }
 
 function isPosition(v: unknown): v is Position {

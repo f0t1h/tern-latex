@@ -90,19 +90,44 @@ export function docTexFiles(cfg: Config, doc: DocConfig): string[] {
   return files.length ? files : [doc.root];
 }
 
+/** Text around a selection in the PDF (the viewer's text layer), to tell repeated words apart. */
+export interface SelectionContext {
+  before: string;
+  after: string;
+}
+
+const CONTEXT_WORDS = 8;
+
+function wordsOf(s: string): string[] {
+  return (s.normalize("NFKC").toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []);
+}
+
+/** How many of CONTEXT's words sit next to HAY[start, end) as they do in the PDF: up to 8 on each side. */
+function contextFit(hay: string, start: number, end: number, context: SelectionContext): number {
+  const near = (a: string[], b: string[]) => {
+    let n = 0;
+    while (n < a.length && n < b.length && a[n] === b[n]) n++;
+    return n;
+  };
+  const before = near(wordsOf(hay.slice(Math.max(0, start - 200), start)).reverse().slice(0, CONTEXT_WORDS), wordsOf(context.before).reverse().slice(0, CONTEXT_WORDS));
+  const after = near(wordsOf(hay.slice(end, end + 200)).slice(0, CONTEXT_WORDS), wordsOf(context.after).slice(0, CONTEXT_WORDS));
+  return before + after;
+}
+
 /**
- * Where SELECTION (as the viewer's text layer reports it) is in the document's sources, preferring the
- * occurrence nearest HINT (the SyncTeX guess); null when the words are not found. A single word is only looked
- * for as a whole word in HINT's file: anywhere else it would match too often to mean anything.
+ * Where SELECTION (as the viewer's text layer reports it) is in the document's sources: the occurrence whose
+ * surrounding words best match CONTEXT (the text around it in the PDF), then the one nearest HINT (the SyncTeX
+ * guess, a line at best: the same words can repeat on it); null when the words are not found. A single word is
+ * only looked for as a whole word in HINT's file: anywhere else it would match too often to mean anything.
  */
-export function locateSelection(cfg: Config, doc: DocConfig, selection: string, hint?: { file: string; line: number }): Located | null {
+export function locateSelection(cfg: Config, doc: DocConfig, selection: string, hint?: { file: string; line: number }, context?: SelectionContext): Located | null {
   const words = normalise(selection).split(" ").filter(Boolean);
   const single = words.length === 1;
   if (!words.length || (single && !hint)) return null;
   const head = words.slice(0, Math.min(6, words.length)).join(" ");
   const tail = words.slice(-Math.min(6, words.length)).join(" ");
   const letter = /[\p{L}\p{N}]/u;
-  let best: (Located & { distance: number }) | null = null;
+  let best: (Located & { distance: number; fit: number }) | null = null;
   for (const file of docTexFiles(cfg, doc)) {
     if (single && file !== hint?.file) continue;
     const abs = join(cfg.dir, file);
@@ -118,7 +143,8 @@ export function locateSelection(cfg: Config, doc: DocConfig, selection: string, 
       const from = lineAt(src, plain.at[s]);
       const to = lineAt(src, last);
       const distance = hint && hint.file === file ? Math.abs(from - hint.line) : hint ? 1e6 : 0;
-      if (!best || distance < best.distance) best = { file, from, to, start: plain.at[s], end: last + 1, distance };
+      const fit = context ? contextFit(hay, s, t + tail.length, context) : 0;
+      if (!best || fit > best.fit || (fit === best.fit && distance < best.distance)) best = { file, from, to, start: plain.at[s], end: last + 1, distance, fit };
     }
   }
   return best ? { file: best.file, from: best.from, to: best.to, start: best.start, end: best.end } : null;
@@ -150,8 +176,8 @@ function findRun(words: string[], hay: string, size: number, ks: number[], from:
  * found in the sources and ends after the last such run, nearest HINT, flagged inexact so the caller can widen it
  * (to whole sentences, for a rewrite). Null when no run is found.
  */
-export function locateRange(cfg: Config, doc: DocConfig, selection: string, hint?: { file: string; line: number }): LocatedRange | null {
-  const exact = locateSelection(cfg, doc, selection, hint);
+export function locateRange(cfg: Config, doc: DocConfig, selection: string, hint?: { file: string; line: number }, context?: SelectionContext): LocatedRange | null {
+  const exact = locateSelection(cfg, doc, selection, hint, context);
   if (exact) return { file: exact.file, start: exact.start, end: exact.end, startExact: true, endExact: true };
   const words = normalise(selection).split(" ").filter(Boolean);
   if (words.length < 2) return null;
