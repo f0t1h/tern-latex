@@ -98,7 +98,49 @@ export interface OverleafState {
   problem?: string;
   /** The last background pull: how many commits, which files. */
   pulled?: { commits: number; files: string[] };
+  /** Co-authors with commits on Overleaf in the last RECENT_DAYS, most recent first (the user left out). */
+  people: Collaborator[];
   checkedAt: string;
+}
+
+/** Someone whose edits reached Overleaf lately, from its commits' authors. */
+export interface Collaborator {
+  name: string;
+  email: string;
+  /** Their latest commit's author date, ISO. */
+  lastAt: string;
+  commits: number;
+  /** Files their commits changed, the most recent first (up to RECENT_FILES). */
+  files: string[];
+}
+
+const RECENT_DAYS = 7;
+const RECENT_FILES = 6;
+const RECENT_PEOPLE = 8;
+
+/**
+ * Co-authors from Overleaf's commits of the last week. Overleaf writes a commit per version of its history, under
+ * the account that edited, so its newest commit says when someone last edited there. The user (git's user.email,
+ * else user.name) is left out.
+ */
+export async function collaborators(dir: string, rev = "@{u}"): Promise<Collaborator[]> {
+  const log = await git(dir, ["log", rev, `--since=${RECENT_DAYS}.days.ago`, "--format=%x1e%an%x1f%ae%x1f%aI", "--name-only"]);
+  if (log.code !== 0) return [];
+  const myEmail = (await git(dir, ["config", "user.email"])).stdout.trim().toLowerCase();
+  const myName = (await git(dir, ["config", "user.name"])).stdout.trim().toLowerCase();
+  const people = new Map<string, Collaborator>();
+  for (const record of log.stdout.split("\x1e").slice(1)) {
+    const [head, ...rest] = record.split("\n");
+    const [name = "", email = "", date = ""] = head.split("\x1f");
+    if (myEmail ? email.toLowerCase() === myEmail : name.toLowerCase() === myName) continue;
+    const key = (email || name).toLowerCase();
+    // git log runs newest first: the first record of a person is their latest.
+    const p = people.get(key) ?? { name, email, lastAt: new Date(date).toISOString(), commits: 0, files: [] };
+    p.commits++;
+    for (const f of rest.map((l) => l.trim()).filter(Boolean)) if (p.files.length < RECENT_FILES && !p.files.includes(f)) p.files.push(f);
+    people.set(key, p);
+  }
+  return [...people.values()].slice(0, RECENT_PEOPLE);
 }
 
 /** DIR's position against Overleaf, after fetching it; null when DIR is no Overleaf clone. */
@@ -112,7 +154,7 @@ export async function overleafState(dir: string): Promise<OverleafState | null> 
   const behind = await count("HEAD..@{u}");
   const ahead = await count("@{u}..HEAD");
   const incoming = behind ? lines(await git(dir, ["diff", "--name-only", "HEAD...@{u}"])) : [];
-  const state: OverleafState = { behind, ahead, incoming, edited, checkedAt };
+  const state: OverleafState = { behind, ahead, incoming, edited, people: await collaborators(dir), checkedAt };
   return fetched.code === 0 ? state : { ...state, problem: `could not reach Overleaf: ${failure(fetched)}` };
 }
 

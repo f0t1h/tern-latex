@@ -6,7 +6,7 @@ import { pullVerdict } from "../omp/extension.ts";
 import type { Status } from "../src/builder.ts";
 import { withReviewFallback } from "../src/changes.ts";
 import { type Config, docPaths, loadConfig } from "../src/config.ts";
-import { isOverleafUrl, pullOverleaf, pushOverleaf } from "../src/overleaf.ts";
+import { isOverleafUrl, overleafState, pullOverleaf, pushOverleaf } from "../src/overleaf.ts";
 import { gitOk } from "../src/vcs.ts";
 
 const root = mkdtempSync(join(tmpdir(), "ternlatex-overleaf-test-"));
@@ -175,6 +175,21 @@ test("a new file the build reads goes to Overleaf with the edits; other untracke
   expect(r.committed.sort()).toEqual(["figs/plot.pdf", "main.tex"]);
   expect(await overleafHas(join(root, "push-figure"), "figs/plot.pdf")).toBe("%PDF\n");
   expect(await gitOk(ours, ["status", "--porcelain"])).toBe("?? notes.txt");
+});
+
+test("co-authors' recent Overleaf edits are counted per person, latest files first, the user's own left out", async () => {
+  const { ours, coauthorEdits } = await setup("people");
+  const cfg = await project(ours);
+  await gitOk(ours, ["config", "user.email", "me@example.com"]);
+  await gitOk(ours, ["config", "user.name", "Me"]);
+  await coauthorEdits("intro.tex", "intro, edited in Overleaf\n");
+  writeFileSync(join(ours, "main.tex"), "one, mine\n");
+  expect((await pushOverleaf(cfg, { build: builds(true).build })).pushed).toBe(1);
+  const state = await overleafState(ours);
+  expect(state?.people.map((p) => ({ name: p.name, commits: p.commits, files: p.files }))).toEqual([
+    { name: "t", commits: 2, files: ["intro.tex", "main.tex"] },
+  ]);
+  expect(Date.now() - Date.parse(state?.people[0].lastAt ?? "")).toBeLessThan(60_000);
 });
 
 test("the shared review fallback gains the authors with marks it lacks, keeps a co-author's entry, else stays as is", () => {

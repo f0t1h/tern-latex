@@ -105,6 +105,8 @@ const ui = {
   overleafPull: $('overleaf-pull'),
   overleafPush: $('overleaf-push'),
   overleafMessage: $('overleaf-message'),
+  overleafPeople: $('overleaf-people'),
+  people: $('people'),
   diffBar: $('diff-bar'),
   diffLabel: $('diff-label'),
   diffBack: $('diff-back'),
@@ -2069,6 +2071,7 @@ async function fetchCaps() {
   ui.changesBtn.hidden = !caps.history;
   if (!caps.history) closeChangesMenu();
   ui.overleafBtn.hidden = !caps.overleaf;
+  renderPeople();
   if (!caps.overleaf) closeOverleafMenu();
   if (answered) updateTip();
   if (!ui.help.hidden) renderHelp();
@@ -2723,10 +2726,79 @@ function renderOverleaf() {
     note(`Checked ${clockTime(s.checkedAt)}`);
   }
   ui.overleafSummary.replaceChildren(...notes);
+  const people = [];
+  if (s?.people.length) {
+    people.push(el('div', 'menu-sep'), el('div', 'menu-note menu-heading', 'Recent edits on Overleaf'));
+    for (const p of s.people) {
+      const row = el('div', 'person-row');
+      row.append(avatar(p), el('span', 'what', p.name), el('span', 'when', activeNow(p) ? 'editing now' : relTime(p.lastAt)));
+      row.title = personTitle(p);
+      people.push(row);
+      for (const f of p.files.filter((f) => f.endsWith('.tex'))) {
+        people.push(
+          menuItem(el('span', 'what person-file', f), `Open ${f}`, () => {
+            closeOverleafMenu();
+            openFile(f, 1);
+          }),
+        );
+      }
+    }
+  }
+  ui.overleafPeople.replaceChildren(...people);
   ui.overleafPull.disabled = overleafBusy;
   ui.overleafPush.disabled = overleafBusy;
   btn.title = s?.problem ? `Overleaf: ${s.problem}` : "Overleaf: pull co-authors' edits, push yours";
+  renderPeople();
 }
+
+// Overleaf writes a commit per version of its history, a few minutes apart while someone types.
+const ACTIVE_MS = 15 * 60_000;
+const PEOPLE_WINDOW_MS = 24 * 3600_000;
+const PEOPLE_SHOWN = 5;
+
+function activeNow(p) {
+  return Date.now() - Date.parse(p.lastAt) < ACTIVE_MS;
+}
+
+function initials(name) {
+  const words = name.split(/[\s._-]+/).filter(Boolean);
+  const letters = words.length > 1 ? words[0][0] + words[words.length - 1][0] : (words[0] ?? '?').slice(0, 2);
+  return letters.toUpperCase();
+}
+
+function personTitle(p) {
+  const when = activeNow(p) ? `editing now (last change ${relTime(p.lastAt)})` : `last edit ${relTime(p.lastAt)}`;
+  return `${p.name}: ${when}, ${plural(p.commits, 'change')} this week\n${p.files.join('\n')}`;
+}
+
+/** A person's initials in a circle of a colour fixed by their email. */
+function avatar(p) {
+  let h = 0;
+  for (const c of p.email || p.name) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  const a = el('span', `avatar${activeNow(p) ? ' active' : ''}`, initials(p.name));
+  a.style.setProperty('--hue', String(h % 360));
+  return a;
+}
+
+/** Toolbar avatars: co-authors who edited on Overleaf in the last day, a dot on those editing now. */
+function renderPeople() {
+  const recent = (state.overleaf?.people ?? []).filter((p) => Date.now() - Date.parse(p.lastAt) < PEOPLE_WINDOW_MS).slice(0, PEOPLE_SHOWN);
+  ui.people.hidden = !recent.length || ui.overleafBtn.hidden;
+  ui.people.replaceChildren(
+    ...recent.map((p) => {
+      const b = el('button', 'person');
+      b.type = 'button';
+      b.title = personTitle(p);
+      b.append(avatar(p));
+      b.addEventListener('click', () => (ui.overleafMenu.hidden ? openOverleafMenu() : closeOverleafMenu()));
+      return b;
+    }),
+  );
+}
+// Relative times and "editing now" age without new events.
+setInterval(() => {
+  if (state.overleaf) renderOverleaf();
+}, 30_000);
 
 function closeOverleafMenu() {
   ui.overleafMenu.hidden = true;

@@ -20,6 +20,7 @@
     <button id="warn-count" class="count warnings" type="button" hidden title="Show diagnostics">0 warnings</button>
     <span id="conn" hidden title="Lost connection to the ternlatex server; reconnecting">disconnected</span>
     <span class="spacer"></span>
+    <div id="people" hidden role="group" aria-label="Co-authors' recent edits on Overleaf"></div>
     <div id="overleaf-wrap">
       <button id="overleaf-btn" class="tool" type="button" hidden aria-haspopup="menu" aria-expanded="false"
         title="Overleaf: pull co-authors' edits, push yours"><span class="spinner" aria-hidden="true"></span><span class="glyph" aria-hidden="true">⇅</span> Overleaf <span id="overleaf-badge"></span></button>
@@ -31,6 +32,7 @@
           title="Commit your edits, rebase onto Overleaf and push; not while omp's, the proofreader's or dictation's marks remain, or the build fails">Push to Overleaf…</button>
         <input id="overleaf-message" type="text" hidden autocomplete="off" spellcheck="true"
           placeholder="Commit message (optional)" title="Enter pushes, Escape cancels">
+        <div id="overleaf-people" class="menu-group" aria-label="Recent edits on Overleaf"></div>
       </div>
     </div>
     <div id="changes-wrap">
