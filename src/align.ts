@@ -53,7 +53,7 @@ const LETTERS: Record<string, string> = { i: "i", j: "j", ss: "ss", ae: "ae", AE
 const MATH_ENVS = /^(?:equation|align|alignat|flalign|gather|multline|eqnarray|displaymath|math)\*?$/;
 
 /** End of the group at OPEN (`{` or `[`), past its closer. */
-function groupEnd(src: string, open: number): number {
+export function groupEnd(src: string, open: number): number {
   const [o, c] = src[open] === "[" ? ["[", "]"] : ["{", "}"];
   let depth = 0;
   for (let i = open; i < src.length; i++) {

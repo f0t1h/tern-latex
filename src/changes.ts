@@ -346,6 +346,22 @@ export function scanChanges(cfg: Config): Change[] {
 // Accept / reject
 // ---------------------------------------------------------------------------
 
+/**
+ * Cross-references `ulem` can't take apart: inside `\deleted`/`\replaced`/`\highlight` (struck or underlined by
+ * ulem) \autoref and cleveref's \cref stop the build ("Extra }"); in an \mbox they don't.
+ */
+const FRAGILE_REF = /\\(?:autoref|[cC]ref|[cC]pageref|labelcref|[cC]refrange)\*?(?:\[[^\]]*\])*(?:\{[^{}]*\})+/g;
+
+/** TEXT with each fragile reference in an \mbox, for the argument of a mark ulem draws. */
+export function boxRefs(text: string): string {
+  return text.replace(FRAGILE_REF, (ref, at: number) => (text.slice(Math.max(0, at - 6), at) === "\\mbox{" ? ref : `\\mbox{${ref}}`));
+}
+
+/** Undoes boxRefs when a mark is resolved: the source gets its reference back as it was. */
+function unboxRefs(text: string): string {
+  return text.replace(/\\mbox\{(\\(?:autoref|[cC]ref|[cC]pageref|labelcref|[cC]refrange)\*?(?:\[[^\]]*\])*(?:\{[^{}]*\})+)\}/g, "$1");
+}
+
 /** Applies `decision` to the target spans of `text`; nested targets resolve inside their kept argument. */
 export function rewrite(text: string, targets: Span[], decision: "accept" | "reject"): string {
   const sorted = [...targets].sort((a, b) => a.start - b.start || b.end - a.end);
@@ -356,7 +372,7 @@ export function rewrite(text: string, targets: Span[], decision: "accept" | "rej
       if (t.start < pos || t.end > to) continue; // nested in a target already handled, or outside
       out += text.slice(pos, t.start);
       const keep = KEEP[t.kind][decision];
-      out += keep === null ? GONE : render(t.args[keep].start, t.args[keep].end);
+      out += keep === null ? GONE : unboxRefs(render(t.args[keep].start, t.args[keep].end));
       pos = t.end;
     }
     return out + text.slice(pos, to);

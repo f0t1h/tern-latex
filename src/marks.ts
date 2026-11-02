@@ -1,3 +1,4 @@
+import { groupEnd } from "./align.ts";
 import { escapeLatex } from "./changes.ts";
 import type { Hunk } from "./proofread.ts";
 
@@ -86,11 +87,31 @@ export function markHunks(file: string, src: string, start: number, end: number,
     const problem = unbalanced(old);
     if (problem) return problem;
     const line = lineAt(src, p.start);
+    // ulem, which draws strikes and highlights, can't take apart a footnote or another review mark (a margin note).
+    const inner = [...old.matchAll(/\\(footnote|comment|added|deleted|replaced|highlight)\b\s*(?:\[[^\]]*\])?\s*(?=\{)/g)].map((m) => {
+      let e = groupEnd(old, m.index + m[0].length);
+      if (m[1] === "replaced") e = groupEnd(old, e); // \replaced{new}{old}
+      return { start: m.index, end: e, what: m[1] === "footnote" ? "a footnote" : "another review mark" };
+    });
+    if (inner.length && kind !== "highlight") return `the selection holds ${inner[0].what}, which can't be struck through: mark the text around it`;
     if (kind === "delete") hunks.push({ file, start: p.start, end: p.end, old, new: "", why: "", line });
     else if (kind === "replace") {
       if (typed === old) return "the new text is the same as the old";
       hunks.push({ file, start: p.start, end: p.end, old, new: typed, why: "", line });
-    } else hunks.push({ file, start: p.start, end: p.end, old, new: old, why: "", line, markup: "highlight" });
+    } else {
+      // A highlight goes around them: one per stretch of text between.
+      let at = 0;
+      for (const f of [...inner, { start: old.length, end: old.length }]) {
+        const piece = old.slice(at, f.start);
+        const lead = piece.length - piece.trimStart().length;
+        const body = piece.trim();
+        if (body) {
+          const s = p.start + at + lead;
+          hunks.push({ file, start: s, end: s + body.length, old: body, new: body, why: "", line: lineAt(src, s), markup: "highlight" });
+        }
+        at = f.end;
+      }
+    }
   }
   return hunks;
 }

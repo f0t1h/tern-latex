@@ -67,6 +67,17 @@ describe("review marks", () => {
     const start = tex.indexOf(all);
     expect(markHunks("main.tex", tex, start, start + all.length, "replace", "x")).toMatch(/can't span paragraphs/);
   });
+
+  test("a highlight goes around footnotes and earlier marks; a strike over them is refused; \\autoref is boxed for ulem", () => {
+    const tex = "Fast\\footnote{Very.} build here\\comment[id=B]{why?} and \\autoref{tab:x} there.\n";
+    const all = tex.trim();
+    expect(mark(tex, all, "highlight")).toBe(
+      "\\highlight[id=AK]{Fast}\\footnote{Very.} \\highlight[id=AK]{build here}\\comment[id=B]{why?} \\highlight[id=AK]{and \\mbox{\\autoref{tab:x}} there.}\n",
+    );
+    expect(markHunks("main.tex", tex, 0, all.length, "delete", "")).toMatch(/footnote/);
+    const plain = "See \\autoref{tab:x} now.\n";
+    expect(mark(plain, "See \\autoref{tab:x}", "delete")).toBe("\\deleted[id=AK]{See \\mbox{\\autoref{tab:x}}} now.\n");
+  });
 });
 
 describe("reviewer", () => {

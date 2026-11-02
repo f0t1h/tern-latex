@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Status } from "./builder.ts";
-import { escapeLatex, PROOF_AUTHOR, texFiles } from "./changes.ts";
+import { boxRefs, escapeLatex, PROOF_AUTHOR, texFiles } from "./changes.ts";
 import { type Config, docPaths, paths, posix, UsageError } from "./config.ts";
 import { addPending } from "./suggestions.ts";
 import { type Model, taskModel } from "./models.ts";
@@ -292,14 +292,14 @@ export function applyHunks(text: string, hunks: Hunk[], direct: boolean, author:
         : h.markup === "highlight"
           ? direct
             ? h.old
-            : `\\highlight[${opts}]{${h.old}}`
+            : `\\highlight[${opts}]{${boxRefs(h.old)}}`
       : direct
         ? h.new
         : h.old && h.new
-          ? `\\replaced[${opts}]{${h.new}}{${h.old}}`
+          ? `\\replaced[${opts}]{${h.new}}{${boxRefs(h.old)}}`
           : h.new
             ? `\\added[${opts}]{${h.new}}`
-            : `\\deleted[${opts}]{${h.old}}`;
+            : `\\deleted[${opts}]{${boxRefs(h.old)}}`;
     out = out.slice(0, h.start) + markup + out.slice(h.end);
   }
   return out;
