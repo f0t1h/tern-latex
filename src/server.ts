@@ -404,10 +404,10 @@ export async function startServer(o: ServerOptions): Promise<DevServer> {
           return send(res, 400, { error: "page, start {x,y}, text and kind (delete, replace, insert, highlight, comment) required" });
         }
         const loc = await selectionRange(doc, page, start, text, contextOf(body));
-        if (!loc) return send(res, 404, { error: "couldn't find that text in the source" });
+        if (!loc) return send(res, 404, { error: "couldn't find that text in the source (a figure's text, an algorithm, or text from two files?)" });
         // Insertion needs only the end to be exact; the other marks wrap the selection, so both ends.
         if (!(kind === "insert" ? loc.endExact : loc.startExact && loc.endExact)) {
-          return send(res, 422, { error: "the selection begins or ends in text a macro typesets (a citation, \\LaTeX); select running text" });
+          return send(res, 422, { error: "couldn't line the selection up with the source word for word (a figure's text, an algorithm, or text from two files?); select running text" });
         }
         const src = readFileSync(join(cfg.dir, loc.file), "utf8");
         const hunk = markHunk(loc.file, src, loc.start, loc.end, kind, typeof input === "string" ? input : "");

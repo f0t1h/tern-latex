@@ -213,6 +213,8 @@ export function tokenize(src: string, macros: { get(name: string): string[] | un
         continue;
       }
       const next = skipSpaces(s, after);
+      // A numbered heading or caption: the PDF shows its number ("2.2", "Table 1.") before the text.
+      if (/^(?:part|chapter|section|subsection|subsubsection|paragraph|subparagraph|caption)$/.test(name)) standIn(i, after, 3);
       if (s[next] === "{" || s[next] === "[" || SILENT.has(bare)) {
         // Formatting and sectioning (\emph{…}, \section{…}, a macro with arguments): its arguments are the text.
         i = s[next] === "[" ? skipArgs(s, after, 0) : after;
@@ -257,10 +259,13 @@ export function align(words: string[], tokens: Token[]): Alignment[] {
   const n = words.length;
   if (!n) return [];
   const found: Alignment[] = [];
+  const [w0, w1] = words;
+  // A selection starts at a word (or the end of one, or a word the PDF hyphenated), or inside a stand-in's output.
+  const startsAt = (t: Token) =>
+    t.word === null ? t.max > 0 : t.word === w0 || (w0.length >= 2 && t.word.endsWith(w0)) || (w1 !== undefined && t.word === w0 + w1) || (n === 1 && w0.length >= 2 && t.word.startsWith(w0));
   for (let first = 0; first < tokens.length; first++) {
     const t = tokens[first];
-    // A selection starts at a word, or inside what a stand-in typesets.
-    if (t.word !== null ? t.word !== words[0] : t.max === 0) continue;
+    if (!startsAt(t)) continue;
     const memo = new Map<number, { last: number; loose: number } | null>();
     const go = (wi: number, ti: number): { last: number; loose: number } | null => {
       if (wi === n) return { last: ti - 1, loose: 0 };
@@ -269,13 +274,23 @@ export function align(words: string[], tokens: Token[]): Alignment[] {
       if (memo.has(key)) return memo.get(key) ?? null;
       const tok = tokens[ti];
       let best: { last: number; loose: number } | null = null;
+      const consider = (r: { last: number; loose: number } | null, loose: number) => {
+        if (r && (!best || r.loose + loose < best.loose)) best = { last: r.last, loose: r.loose + loose };
+      };
       if (tok.word !== null) {
-        if (tok.word === words[wi]) best = go(wi + 1, ti + 1);
+        const w = words[wi];
+        if (tok.word === w) consider(go(wi + 1, ti + 1), 0);
+        // A word the PDF hyphenated at a line end: two selection words, one source word.
+        if (wi + 1 < n && tok.word === w + words[wi + 1]) consider(go(wi + 2, ti + 1), 0);
+        // A drag from the middle of a word: the selection's first word ends a source word, its last starts one.
+        if (w.length >= 2 && tok.word !== w) {
+          if (wi === 0 && tok.word.endsWith(w)) consider(go(1, ti + 1), 0.5);
+          if (wi === n - 1 && tok.word.startsWith(w)) consider({ last: ti, loose: 0 }, 0.5);
+        }
       } else {
         for (let take = Math.min(tok.max, n - wi); take >= 0; take--) {
           // The selection may end inside what the stand-in typesets.
-          const r = wi + take === n && take > 0 ? { last: ti, loose: 0 } : go(wi + take, ti + 1);
-          if (r && (!best || r.loose + take < best.loose)) best = { last: r.last, loose: r.loose + take };
+          consider(wi + take === n && take > 0 ? { last: ti, loose: 0 } : go(wi + take, ti + 1), take);
         }
       }
       memo.set(key, best);

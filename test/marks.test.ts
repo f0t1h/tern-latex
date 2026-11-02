@@ -131,4 +131,17 @@ describe("locating a selection", () => {
     const h = markHunk("main.tex", src, start, start + "\\tool{} completed".length, "delete", "");
     expect(typeof h === "string" ? h : applyHunks(src, [h], false, "AK")).toContain("\\deleted[id=AK]{\\tool{} completed} the assembly");
   });
+
+  test("takes words the PDF hyphenated at a line end, words cut by the drag, and section and caption numbers", () => {
+    const src = "\\begin{document}\n\\section{Methods}\nThe assembler compacts simple nodes in parallel.\n\\end{document}\n";
+    const cfg = project("", src);
+    const doc = cfg.docs[0];
+    const at = (selection: string) => {
+      const loc = locateSelection(cfg, doc, selection, { file: "main.tex", line: 3 });
+      return loc ? src.slice(loc.start, loc.end) : null;
+    };
+    expect(at("The assem- bler compacts")).toBe("The assembler compacts");
+    expect(at("ssembler compacts sim")).toBe("assembler compacts simple");
+    expect(at("2 Methods The assembler")).toBe("\\section{Methods}\nThe assembler");
+  });
 });
