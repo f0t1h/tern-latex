@@ -10,7 +10,7 @@ import { type Diagnostic, formatDiagnostic } from "./diagnostics.ts";
 import { SearchIndex } from "./search.ts";
 import { SyncTex } from "./synctex.ts";
 import { lineEndOffset, type LocatedRange, locateRange, locateSelection, type SelectionContext } from "./locate.ts";
-import { isMarkKind, markHunk } from "./marks.ts";
+import { isMarkKind, markHunks } from "./marks.ts";
 import { changesLoaded, type Hunk, writeSuggestions } from "./proofread.ts";
 import { offsetOf, type Position, positionOf, type RewriteRequest, type RewriteResult, widenToSentences } from "./rewrite.ts";
 import { pcm16, type SpeechStatus, spokenLatex } from "./speech.ts";
@@ -405,21 +405,21 @@ export async function startServer(o: ServerOptions): Promise<DevServer> {
         }
         const loc = await selectionRange(doc, page, start, text, contextOf(body));
         if (!loc) return send(res, 404, { error: "couldn't find that text in the source (a figure's text, an algorithm, or text from two files?)" });
-        // Insertion needs only the end to be exact; the other marks wrap the selection, so both ends.
-        if (!(kind === "insert" ? loc.endExact : loc.startExact && loc.endExact)) {
+        // An insertion or comment goes at the end, so only that must be exact; the other marks wrap the selection.
+        if (!(kind === "insert" || kind === "comment" ? loc.endExact : loc.startExact && loc.endExact)) {
           return send(res, 422, { error: "couldn't line the selection up with the source word for word (a figure's text, an algorithm, or text from two files?); select running text" });
         }
         const src = readFileSync(join(cfg.dir, loc.file), "utf8");
-        const hunk = markHunk(loc.file, src, loc.start, loc.end, kind, typeof input === "string" ? input : "");
-        if (typeof hunk === "string") return send(res, 422, { error: hunk });
-        if (hunk.markup && !changesLoaded(cfg, [loc.file])) {
+        const hunks = markHunks(loc.file, src, loc.start, loc.end, kind, typeof input === "string" ? input : "");
+        if (typeof hunks === "string") return send(res, 422, { error: hunks });
+        if (hunks.some((h) => h.markup) && !changesLoaded(cfg, [loc.file])) {
           return send(res, 409, { error: "highlights and comments need the changes package: add \\usepackage{changes} to the preamble" });
         }
         const me = o.review.me;
-        const r = await writeSuggestions(cfg, [hunk], new Map([[loc.file, src]]), { author: me.id, direct: false, build: () => builder.request(), label: `${kind} by ${me.id}` });
+        const r = await writeSuggestions(cfg, hunks, new Map([[loc.file, src]]), { author: me.id, direct: false, build: () => builder.request(), label: `${kind} by ${me.id}` });
         if (r.reverted) return send(res, 409, { error: `not marked: ${r.reverted}` });
-        if (!r.hunks.length) return send(res, 409, { error: `${loc.file} changed meanwhile; select again` });
-        return send(res, 200, { file: loc.file, line: hunk.line, author: me.id, pending: r.pending === true });
+        if (r.hunks.length < hunks.length) return send(res, 409, { error: `${loc.file} changed meanwhile; select again` });
+        return send(res, 200, { file: loc.file, line: hunks[0].line, author: me.id, pending: r.pending === true });
       }
       if (route === "POST /open") {
         const abs = inProject(body.file);

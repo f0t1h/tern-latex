@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { initials, renderReviewSetup, reviewer } from "../src/changes.ts";
 import { type Config, loadConfig } from "../src/config.ts";
 import { locateSelection } from "../src/locate.ts";
-import { markHunk } from "../src/marks.ts";
+import { markHunks } from "../src/marks.ts";
 import { applyHunks } from "../src/proofread.ts";
 
 const dirs: string[] = [];
@@ -22,11 +22,11 @@ function project(toml: string, main: string): Config {
 }
 
 /** The source after marking SELECTED (its first occurrence) as KIND by author AK. */
-function mark(src: string, selected: string, kind: Parameters<typeof markHunk>[4], text = ""): string {
+function mark(src: string, selected: string, kind: Parameters<typeof markHunks>[4], text = ""): string {
   const start = src.indexOf(selected);
-  const h = markHunk("main.tex", src, start, start + selected.length, kind, text);
+  const h = markHunks("main.tex", src, start, start + selected.length, kind, text);
   if (typeof h === "string") throw new Error(h);
-  return applyHunks(src, [h], false, "AK");
+  return applyHunks(src, h, false, "AK");
 }
 
 describe("review marks", () => {
@@ -46,17 +46,26 @@ describe("review marks", () => {
     expect(mark(src, "quick", "replace", "\\emph{very} quick")).toContain("\\replaced[id=AK]{\\emph{very} quick}{quick}");
   });
 
-  test("a selection that would split a brace group, math or a paragraph is refused", () => {
+  test("a selection that would split a brace group or math is refused", () => {
     const tex = "An \\emph{important point} and $x + y$ here.\n\nNext paragraph.";
     const reason = (selected: string) => {
       const start = tex.indexOf(selected);
-      return markHunk("main.tex", tex, start, start + selected.length, "delete", "");
+      return markHunks("main.tex", tex, start, start + selected.length, "delete", "");
     };
     expect(reason("point} and")).toMatch(/group/);
     expect(reason("y$ here")).toMatch(/math/);
-    expect(reason("here.\n\nNext")).toMatch(/paragraphs/);
     expect(typeof reason("\\emph{important point}")).toBe("object");
-    expect(markHunk("main.tex", tex, 0, 2, "replace", "  ")).toMatch(/type the new text/);
+    expect(markHunks("main.tex", tex, 0, 2, "replace", "  ")).toMatch(/type the new text/);
+  });
+
+  test("over several paragraphs: a strike or highlight per paragraph, one comment at the end, no replacement", () => {
+    const tex = "First one ends here.\n\n  Second starts here and ends.\n";
+    const all = "ends here.\n\n  Second starts";
+    expect(mark(tex, all, "delete")).toBe("First one \\deleted[id=AK]{ends here.}\n\n  \\deleted[id=AK]{Second starts} here and ends.\n");
+    expect(mark(tex, all, "highlight")).toBe("First one \\highlight[id=AK]{ends here.}\n\n  \\highlight[id=AK]{Second starts} here and ends.\n");
+    expect(mark(tex, all, "comment", "Merge these?")).toBe("First one ends here.\n\n  Second starts\\comment[id=AK]{Merge these?} here and ends.\n");
+    const start = tex.indexOf(all);
+    expect(markHunks("main.tex", tex, start, start + all.length, "replace", "x")).toMatch(/can't span paragraphs/);
   });
 });
 
@@ -128,8 +137,8 @@ describe("locating a selection", () => {
     expect(at("nothing like this")).toBeNull();
 
     const start = src.indexOf("\\tool{}");
-    const h = markHunk("main.tex", src, start, start + "\\tool{} completed".length, "delete", "");
-    expect(typeof h === "string" ? h : applyHunks(src, [h], false, "AK")).toContain("\\deleted[id=AK]{\\tool{} completed} the assembly");
+    const h = markHunks("main.tex", src, start, start + "\\tool{} completed".length, "delete", "");
+    expect(typeof h === "string" ? h : applyHunks(src, h, false, "AK")).toContain("\\deleted[id=AK]{\\tool{} completed} the assembly");
   });
 
   test("takes words the PDF hyphenated at a line end, words cut by the drag, and section and caption numbers", () => {

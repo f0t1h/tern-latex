@@ -36,32 +36,61 @@ function unbalanced(slice: string): string | null {
   }
   if (depth !== 0) return "the selection starts or ends inside a LaTeX group ({…}); select within it, or all of it";
   if (dollars % 2) return "the selection starts or ends inside math; select within it, or all of it";
-  if (/\n[ \t]*\n/.test(slice)) return "the selection spans paragraphs; mark one paragraph at a time";
   return null;
 }
 
+/** SRC[START, END) cut at blank lines into its paragraphs' text, each without surrounding whitespace. */
+function paragraphsIn(src: string, start: number, end: number): { start: number; end: number }[] {
+  const out: { start: number; end: number }[] = [];
+  const slice = src.slice(start, end);
+  let at = 0;
+  for (const m of [...slice.matchAll(/\n[ \t]*\n\s*/g), null]) {
+    const stop = m ? m.index : slice.length;
+    const piece = slice.slice(at, stop);
+    const lead = piece.length - piece.trimStart().length;
+    const text = piece.trim();
+    if (text) out.push({ start: start + at + lead, end: start + at + lead + text.length });
+    if (m) at = m.index + m[0].length;
+  }
+  return out;
+}
+
+function lineAt(src: string, offset: number): number {
+  return src.slice(0, offset).split("\n").length;
+}
+
 /**
- * The tracked change for a KIND mark on SRC[START, END) of FILE (the selection's source), with TEXT the user typed
- * (the replacement, insertion or comment); a reason instead when it can't be made.
+ * The tracked changes for a KIND mark on SRC[START, END) of FILE (the selection's source), with TEXT the user
+ * typed (the replacement, insertion or comment); a reason instead when it can't be made. `changes` commands
+ * can't hold a paragraph break, so a strike or highlight over several paragraphs is one per paragraph; a
+ * comment or insertion goes after the selection, wherever it starts.
  */
-export function markHunk(file: string, src: string, start: number, end: number, kind: MarkKind, text: string): Hunk | string {
-  const old = src.slice(start, end);
-  const line = src.slice(0, start).split("\n").length;
+export function markHunks(file: string, src: string, start: number, end: number, kind: MarkKind, text: string): Hunk[] | string {
   const typed = typedLatex(text);
   if ((kind === "replace" || kind === "insert" || kind === "comment") && !typed) return `type the ${kind === "comment" ? "comment" : "new text"} first`;
   if (kind === "insert") {
     // After the selection, with the space a word needs unless it starts with punctuation.
     const added = /^[\s.,;:!?)\]]/.test(typed) ? typed : ` ${typed}`;
-    return { file, start: end, end, old: "", new: added, why: "", line: src.slice(0, end).split("\n").length };
+    return [{ file, start: end, end, old: "", new: added, why: "", line: lineAt(src, end) }];
   }
-  if (!old.trim()) return "the selection is empty in the source";
-  const problem = unbalanced(old);
-  if (problem) return problem;
-  if (kind === "delete") return { file, start, end, old, new: "", why: "", line };
-  if (kind === "replace") return typed === old ? "the new text is the same as the old" : { file, start, end, old, new: typed, why: "", line };
   if (kind === "comment") {
     // After the passage: wrapping it (\highlight with a comment) would box it on one line, past the margin.
-    return { file, start: end, end, old: "", new: "", why: text.trim(), line: src.slice(0, end).split("\n").length, markup: "comment" };
+    return [{ file, start: end, end, old: "", new: "", why: text.trim(), line: lineAt(src, end), markup: "comment" }];
   }
-  return { file, start, end, old, new: old, why: "", line, markup: "highlight" };
+  const paragraphs = paragraphsIn(src, start, end);
+  if (!paragraphs.length) return "the selection is empty in the source";
+  if (kind === "replace" && paragraphs.length > 1) return "a replacement can't span paragraphs: replace one paragraph at a time, or strike them and insert the new text";
+  const hunks: Hunk[] = [];
+  for (const p of paragraphs) {
+    const old = src.slice(p.start, p.end);
+    const problem = unbalanced(old);
+    if (problem) return problem;
+    const line = lineAt(src, p.start);
+    if (kind === "delete") hunks.push({ file, start: p.start, end: p.end, old, new: "", why: "", line });
+    else if (kind === "replace") {
+      if (typed === old) return "the new text is the same as the old";
+      hunks.push({ file, start: p.start, end: p.end, old, new: typed, why: "", line });
+    } else hunks.push({ file, start: p.start, end: p.end, old, new: old, why: "", line, markup: "highlight" });
+  }
+  return hunks;
 }

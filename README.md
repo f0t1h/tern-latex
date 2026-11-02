@@ -329,7 +329,9 @@ breaks. A highlight is a wavy underline in your colour, which breaks across line
 default, a coloured box, can't). Selections go through macros: text your own macros typeset
 (`\newcommand{\tool}{\textsc{Gallifrey}}`), citations, `\ref`/`\autoref` numbers and math all match, and a
 mark that starts or ends in one wraps the whole command (`\deleted[id=AK]{\tool completed}`). A selection that
-splits a `{…}` group in the source (half of an `\emph{…}`) is refused with a reason. Without the `changes`
+splits a `{…}` group in the source (half of an `\emph{…}`) is refused with a reason. Comments and strikes
+can span paragraphs: a comment goes after the last one, a strike or highlight becomes one per paragraph
+(`changes` commands can't hold a paragraph break); a replacement covers one paragraph. Without the `changes`
 package, strikes, replacements and insertions wait in ✎ Review as suggestions; highlights and comments
 need it.
 
