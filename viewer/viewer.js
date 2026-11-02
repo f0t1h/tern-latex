@@ -3206,13 +3206,11 @@ function ctxSelItems(sel) {
     items.push(ctxItem('🎙', 'Dictate', 'D', ui.selDictate.title, () => onSel(sel, startDictation), why || notReady));
   }
   if (c.reviewer) {
+    // Strike, replace and highlight live on the action bar (and its keys); the menu keeps the two that take text.
     if (items.length) items.push(ctxSep());
     items.push(
-      ctxItem('', 'Strike out', '⌫', ui.selStrike.title, () => onSel(sel, () => markSelection('delete')), why),
-      ctxItem('', 'Replace…', 'E', ui.selReplace.title, () => onSel(sel, () => openMarkInput('replace')), why),
-      ctxItem('', 'Insert after…', 'I', ui.selInsert.title, () => onSel(sel, () => openMarkInput('insert')), why),
-      ctxItem('', 'Highlight', 'H', ui.selHighlight.title, () => onSel(sel, () => markSelection('highlight')), why),
       ctxItem('', 'Comment…', 'C', ui.selComment.title, () => onSel(sel, () => openMarkInput('comment')), why),
+      ctxItem('', 'Insert after…', 'I', ui.selInsert.title, () => onSel(sel, () => openMarkInput('insert')), why),
     );
   }
   if (items.length) items.push(ctxSep());

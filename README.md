@@ -178,7 +178,8 @@ Keys are written for macOS. On Windows and Linux, ⌘ is Ctrl and ⌥ is Alt: �
   Ask omp and Fix need `ternlatex dev` running inside Tern. A prompt sent while omp is busy steers the
   running task.
 - **Right-click** on the PDF (or Shift+F10, or the menu key) opens ternlatex's menu. On a selection it
-  offers the action bar's items plus **Copy text**. Elsewhere it offers **Show source here**, **Ask omp
+  offers the action bar's omp items, **Comment…** and **Insert after…** (Strike, Replace and Highlight stay
+  on the bar), plus **Copy text**. Elsewhere it offers **Show source here**, **Ask omp
   about this spot…**, **Insert here…** (your tracked addition after the word you right-clicked),
   **↻ Rebuild**, **± Changes**, **✎ Review**, **Open in PDF app**, **Pop out document** and **Keyboard
   shortcuts**. Hold Shift or ⌥ while right-clicking for the browser's own menu.
