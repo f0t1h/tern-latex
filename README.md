@@ -179,8 +179,9 @@ Keys are written for macOS. On Windows and Linux, ⌘ is Ctrl and ⌥ is Alt: �
   running task.
 - **Right-click** on the PDF (or Shift+F10, or the menu key) opens ternlatex's menu. On a selection it
   offers the action bar's items plus **Copy text**. Elsewhere it offers **Show source here**, **Ask omp
-  about this spot…**, **↻ Rebuild**, **± Changes**, **✎ Review**, **Open in PDF app**, **Pop out
-  document** and **Keyboard shortcuts**. Hold Shift or ⌥ while right-clicking for the browser's own menu.
+  about this spot…**, **Insert here…** (your tracked addition after the word you right-clicked),
+  **↻ Rebuild**, **± Changes**, **✎ Review**, **Open in PDF app**, **Pop out document** and **Keyboard
+  shortcuts**. Hold Shift or ⌥ while right-clicking for the browser's own menu.
 - **± Changes** shows a redline (latexdiff) against the last commit or any save checkpoint and keeps it
   current while you edit. **Back to live** returns to the normal PDF.
 - **✎ Review (N)** lists tracked changes and comments by file and author. Click one to see it in the PDF

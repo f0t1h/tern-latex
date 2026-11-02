@@ -3151,6 +3151,48 @@ function askSpot(t) {
   openAsk();
 }
 
+/** The text node and offset under a client point (WebKit/Blink and Gecko spell this differently). */
+function caretAt(x, y) {
+  if (document.caretPositionFromPoint) {
+    const pos = document.caretPositionFromPoint(x, y);
+    return pos ? { node: pos.offsetNode, offset: pos.offset } : null;
+  }
+  const r = document.caretRangeFromPoint?.(x, y);
+  return r ? { node: r.startContainer, offset: r.startContainer.nodeType === 3 ? r.startOffset : 0 } : null;
+}
+
+/**
+ * "Insert here…": inserts after the word at (or just before) the point. Up to four words ending there are
+ * selected, so the source match is unambiguous and you see where the text goes; then the insert input opens.
+ */
+function insertAt(p, x, y) {
+  const at = caretAt(x, y);
+  const node = at?.node;
+  if (!node || node.nodeType !== 3 || !node.parentElement?.closest('.textLayer') || !p.div.contains(node)) {
+    toast('Right-click on a line of text to insert there');
+    return;
+  }
+  const text = node.data;
+  let end = at.offset;
+  while (end < text.length && /[\p{L}\p{N}]/u.test(text[end])) end++; // to the end of the word under the pointer
+  while (end > 0 && /\s/.test(text[end - 1])) end--; // or back to the word before a space
+  const words = /(?:\S+\s+){0,3}\S+$/u.exec(text.slice(0, end));
+  if (!words) {
+    toast('Right-click after a word to insert there');
+    return;
+  }
+  const range = document.createRange();
+  range.setStart(node, end - words[0].length);
+  range.setEnd(node, end);
+  const s = document.getSelection();
+  s.removeAllRanges();
+  s.addRange(range);
+  const info = readSelection(s);
+  if (!info) return;
+  showSelBar(info);
+  openMarkInput('insert');
+}
+
 function ctxSelItems(sel) {
   const c = state.caps;
   const why = state.docKind !== 'live' ? LIVE_ONLY : selBusy || rec ? 'Busy with the last request' : '';
@@ -3194,6 +3236,10 @@ function ctxSpotItems(t) {
   if (c.agent) {
     items.push(ctxItem('', 'Ask omp about this spot…', '', 'Tell omp what to do with the line here (type an instruction, Enter sends)',
       onPage(() => askSpot(t)), where || (selBusy || rec ? 'Busy with the last request' : '')));
+  }
+  if (c.reviewer) {
+    items.push(ctxItem('', 'Insert here…', '', 'Insert text you type after the word here: your tracked addition',
+      onPage(() => insertAt(p, t.x, t.y)), where || (selBusy ? 'Busy with the last request' : '')));
   }
   items.push(ctxSep(), ctxItem('↻', 'Rebuild', '', 'Rebuild now', rebuild, rebuilding ? 'A rebuild is running' : ''));
   if (c.history) items.push(ctxItem('±', 'Changes', '', ui.changesBtn.title, openChangesMenu));
