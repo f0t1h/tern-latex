@@ -2771,16 +2771,28 @@ function personTitle(p) {
   return `${p.name}: ${when}, ${plural(p.commits, 'change')} this week\n${p.files.join('\n')}`;
 }
 
-/** A person's initials in a circle of a colour fixed by their email. */
+/**
+ * The dot's colour for an edit AGE ms old: bright green when fresh, fading to yellow at a day (PEOPLE_WINDOW_MS);
+ * null after that. On a log scale, so the first hour moves it as much as the rest of the day.
+ */
+function freshness(age) {
+  if (!(age < PEOPLE_WINDOW_MS)) return null;
+  const f = Math.log1p(Math.max(0, age) / 60_000) / Math.log1p(PEOPLE_WINDOW_MS / 60_000);
+  return `hsl(${Math.round(130 - 80 * f)} ${Math.round(85 - 10 * f)}% ${Math.round(45 + 5 * f)}%)`;
+}
+
+/** A person's initials in a circle of a colour fixed by their email, with a dot coloured by their last edit's age. */
 function avatar(p) {
   let h = 0;
   for (const c of p.email || p.name) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-  const a = el('span', `avatar${activeNow(p) ? ' active' : ''}`, initials(p.name));
+  const dot = freshness(Date.now() - Date.parse(p.lastAt));
+  const a = el('span', `avatar${dot ? ' recent' : ''}`, initials(p.name));
   a.style.setProperty('--hue', String(h % 360));
+  if (dot) a.style.setProperty('--fresh', dot);
   return a;
 }
 
-/** Toolbar avatars: co-authors who edited on Overleaf in the last day, a dot on those editing now. */
+/** Toolbar avatars: co-authors who edited on Overleaf in the last day, their dots green (now) to yellow (a day ago). */
 function renderPeople() {
   const recent = (state.overleaf?.people ?? []).filter((p) => Date.now() - Date.parse(p.lastAt) < PEOPLE_WINDOW_MS).slice(0, PEOPLE_SHOWN);
   ui.people.hidden = !recent.length || ui.overleafBtn.hidden;

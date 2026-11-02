@@ -270,7 +270,7 @@ button:disabled { opacity: 0.45; cursor: default; background: none; }
   color: #fff;
   background: hsl(var(--hue, 210) 50% 45%);
 }
-.avatar.active::after {
+.avatar.recent::after {
   content: "";
   position: absolute;
   right: -1px;
@@ -278,7 +278,7 @@ button:disabled { opacity: 0.45; cursor: default; background: none; }
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--ok);
+  background: var(--fresh);
   box-shadow: 0 0 0 1.5px var(--bar-bg);
 }
 .person-row { display: flex; align-items: center; gap: 8px; padding: 4px 8px; }
