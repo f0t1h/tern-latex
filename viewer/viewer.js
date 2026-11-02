@@ -2771,14 +2771,19 @@ function personTitle(p) {
   return `${p.name}: ${when}, ${plural(p.commits, 'change')} this week\n${p.files.join('\n')}`;
 }
 
+const YELLOW_MS = 6 * 3600_000;
+
 /**
- * The dot's colour for an edit AGE ms old: bright green when fresh, fading to yellow at a day (PEOPLE_WINDOW_MS);
- * null after that. On a log scale, so the first hour moves it as much as the rest of the day.
+ * The dot's colour for an edit AGE ms old: bright green when fresh, yellow at 6 hours, red at a day
+ * (PEOPLE_WINDOW_MS); null after that. On a log scale of minutes, so the first hour moves it as much as the
+ * next five.
  */
 function freshness(age) {
   if (!(age < PEOPLE_WINDOW_MS)) return null;
-  const f = Math.log1p(Math.max(0, age) / 60_000) / Math.log1p(PEOPLE_WINDOW_MS / 60_000);
-  return `hsl(${Math.round(130 - 80 * f)} ${Math.round(85 - 10 * f)}% ${Math.round(45 + 5 * f)}%)`;
+  const at = (ms) => Math.log1p(ms / 60_000);
+  const t = at(Math.max(0, age));
+  const hue = t <= at(YELLOW_MS) ? 130 - 72 * (t / at(YELLOW_MS)) : 58 - 58 * ((t - at(YELLOW_MS)) / (at(PEOPLE_WINDOW_MS) - at(YELLOW_MS)));
+  return `hsl(${Math.round(hue)} 85% 50%)`;
 }
 
 /** A person's initials in a circle of a colour fixed by their email, with a dot coloured by their last edit's age. */
