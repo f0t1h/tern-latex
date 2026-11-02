@@ -20,6 +20,19 @@
     <button id="warn-count" class="count warnings" type="button" hidden title="Show diagnostics">0 warnings</button>
     <span id="conn" hidden title="Lost connection to the ternlatex server; reconnecting">disconnected</span>
     <span class="spacer"></span>
+    <div id="overleaf-wrap">
+      <button id="overleaf-btn" class="tool" type="button" hidden aria-haspopup="menu" aria-expanded="false"
+        title="Overleaf: pull co-authors' edits, push yours"><span class="spinner" aria-hidden="true"></span><span class="glyph" aria-hidden="true">⇅</span> Overleaf <span id="overleaf-badge"></span></button>
+      <div id="overleaf-menu" role="menu" hidden>
+        <div id="overleaf-summary" class="menu-group"></div>
+        <div class="menu-sep" role="separator"></div>
+        <button id="overleaf-pull" type="button" role="menuitem" title="Fetch from Overleaf and rebase onto its new commits (also automatic every minute)">Pull now</button>
+        <button id="overleaf-push" type="button" role="menuitem"
+          title="Commit your edits, rebase onto Overleaf and push; not while omp's, the proofreader's or dictation's marks remain, or the build fails">Push to Overleaf…</button>
+        <input id="overleaf-message" type="text" hidden autocomplete="off" spellcheck="true"
+          placeholder="Commit message (optional)" title="Enter pushes, Escape cancels">
+      </div>
+    </div>
     <div id="changes-wrap">
       <button id="changes-btn" class="tool" type="button" hidden aria-haspopup="menu" aria-expanded="false" aria-pressed="false"
         title="Show changes as a redline PDF (latexdiff) since the last commit or a checkpoint"><span class="spinner" aria-hidden="true"></span><span class="glyph" aria-hidden="true">±</span> Changes</button>

@@ -1,9 +1,12 @@
 import { afterAll, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { pullVerdict } from "../omp/extension.ts";
-import { isOverleafUrl, pullOverleaf } from "../src/overleaf.ts";
+import type { Status } from "../src/builder.ts";
+import { withReviewFallback } from "../src/changes.ts";
+import { type Config, docPaths, loadConfig } from "../src/config.ts";
+import { isOverleafUrl, pullOverleaf, pushOverleaf } from "../src/overleaf.ts";
 import { gitOk } from "../src/vcs.ts";
 
 const root = mkdtempSync(join(tmpdir(), "ternlatex-overleaf-test-"));
@@ -74,7 +77,7 @@ test("a local commit that conflicts with Overleaf is left in place, the rebase u
   writeFileSync(join(ours, "main.tex"), "mine\n");
   await gitOk(ours, [...ID, "commit", "-qam", "mine"]);
   const r = await pullOverleaf(ours);
-  expect(r.problem).toContain("conflicts");
+  expect(r.problem).toContain("conflict with Overleaf's 1 new commit(s) in main.tex");
   expect(readFileSync(join(ours, "main.tex"), "utf8")).toBe("mine\n");
   expect(await gitOk(ours, ["status", "--porcelain"])).toBe("");
 });
@@ -92,4 +95,109 @@ test("omp's first edit waits only when the pull brought changes or could not run
   expect(pullVerdict(JSON.stringify({ overleaf: true, pulled: 2, files: ["a.tex"] }))).toContain("read the files again");
   expect(pullVerdict(JSON.stringify({ overleaf: true, pulled: 0, files: [], problem: "x" }))).toContain("Tell the user");
   expect(pullVerdict("ternlatex: not found")).toBeNull();
+});
+
+/** OURS as a ternlatex project (its config untracked, as `adopt` leaves it) with git's identity set. */
+async function project(ours: string): Promise<Config> {
+  writeFileSync(join(ours, "ternlatex.toml"), 'root = "main.tex"\n[review]\nme = "FK"\n');
+  writeFileSync(join(ours, ".git", "info", "exclude"), "ternlatex.toml\nbuild/\n");
+  await gitOk(ours, ["config", "user.email", "t@example.com"]);
+  await gitOk(ours, ["config", "user.name", "t"]);
+  return loadConfig(ours);
+}
+
+function builds(ok: boolean | null, partial = false) {
+  const calls = { n: 0 };
+  const build = async (): Promise<Status[]> => {
+    calls.n++;
+    return [{ doc: "main", root: "main.tex", build: 1, rev: 1, state: "idle", ok, partial, engine: "tectonic", diagnostics: [] }];
+  };
+  return { build, calls };
+}
+
+const overleafHas = async (dir: string, file: string) => {
+  const at = join(dir, "check");
+  rmSync(at, { recursive: true, force: true });
+  await gitOk(dir, ["clone", "-q", join(dir, "overleaf.git"), at]);
+  return readFileSync(join(at, file), "utf8");
+};
+
+test("push waits until omp's suggestions are accepted or rejected, then sends only the user's text", async () => {
+  const { ours } = await setup("push-omp");
+  const cfg = await project(ours);
+  writeFileSync(join(ours, "main.tex"), "one \\added[id=omp]{more}\n");
+  const refused = await pushOverleaf(cfg, { build: builds(true).build });
+  expect(refused.pushed).toBe(0);
+  expect(refused.problem).toContain("omp");
+  expect(refused.problem).toContain("main.tex:1");
+  expect(await overleafHas(join(root, "push-omp"), "main.tex")).toBe("one\n");
+
+  writeFileSync(join(ours, "main.tex"), "one more\n");
+  const r = await pushOverleaf(cfg, { build: builds(true).build, message: "More" });
+  expect(r).toEqual({ pushed: 1, committed: ["main.tex"], pulled: 0 });
+  expect(await overleafHas(join(root, "push-omp"), "main.tex")).toBe("one more\n");
+  expect(await gitOk(ours, ["log", "-1", "--format=%s"])).toBe("More");
+});
+
+test("a failing or partial build is not pushed, nor its edits committed", async () => {
+  const { ours } = await setup("push-broken");
+  const cfg = await project(ours);
+  writeFileSync(join(ours, "main.tex"), "one \\undefined\n");
+  expect((await pushOverleaf(cfg, { build: builds(false).build })).problem).toContain("fails to build");
+  expect((await pushOverleaf(cfg, { build: builds(false, true).build })).problem).toContain("only partially");
+  expect(await gitOk(ours, ["status", "--porcelain", "--untracked-files=no"])).toBe("M main.tex");
+  expect(await overleafHas(join(root, "push-broken"), "main.tex")).toBe("one\n");
+});
+
+test("Overleaf's new commits are pulled under the user's before pushing, and the result built again", async () => {
+  const { ours, coauthorEdits } = await setup("push-behind");
+  const cfg = await project(ours);
+  await coauthorEdits("intro.tex", "intro, edited in Overleaf\n");
+  writeFileSync(join(ours, "main.tex"), "one, edited here\n");
+  const { build, calls } = builds(true);
+  expect(await pushOverleaf(cfg, { build })).toMatchObject({ pushed: 1, pulled: 1, committed: ["main.tex"] });
+  expect(calls.n).toBe(2);
+  expect(await overleafHas(join(root, "push-behind"), "main.tex")).toBe("one, edited here\n");
+  expect(await overleafHas(join(root, "push-behind"), "intro.tex")).toBe("intro, edited in Overleaf\n");
+});
+
+test("a new file the build reads goes to Overleaf with the edits; other untracked files stay local", async () => {
+  const { ours } = await setup("push-figure");
+  const cfg = await project(ours);
+  mkdirSync(join(ours, "figs"));
+  writeFileSync(join(ours, "figs", "plot.pdf"), "%PDF\n");
+  writeFileSync(join(ours, "notes.txt"), "mine\n");
+  writeFileSync(join(ours, "main.tex"), "one \\includegraphics{figs/plot}\n");
+  const deps = docPaths(cfg, cfg.docs[0]).deps;
+  mkdirSync(dirname(deps), { recursive: true });
+  writeFileSync(deps, `main.pdf: ${join(ours, "main.tex")} ${join(ours, "figs", "plot.pdf")}\n`);
+  const r = await pushOverleaf(cfg, { build: builds(true).build });
+  expect(r.committed.sort()).toEqual(["figs/plot.pdf", "main.tex"]);
+  expect(await overleafHas(join(root, "push-figure"), "figs/plot.pdf")).toBe("%PDF\n");
+  expect(await gitOk(ours, ["status", "--porcelain"])).toBe("?? notes.txt");
+});
+
+test("the shared review fallback gains the authors with marks it lacks, keeps a co-author's entry, else stays as is", () => {
+  const dir = join(root, "fallback");
+  mkdirSync(dir);
+  writeFileSync(join(dir, "ternlatex.toml"), 'root = "main.tex"\n');
+  writeFileSync(join(dir, "main.tex"), "\n");
+  const cfg = loadConfig(dir);
+  const me = { id: "FK", name: "F K" };
+  const text = [
+    "\\InputIfFileExists{style/ternlatex-review.tex}{}{%",
+    "  \\def\\tlreviewsetup{\\definechangesauthor[name={Ana}, color=blue]{AK}}}",
+    "\\usepackage{changes}\\csname tlreviewsetup\\endcsname",
+    "",
+  ].join("\n");
+  expect(withReviewFallback(text, cfg, ["AK"], me)).toBeNull();
+  const out = withReviewFallback(text, cfg, ["AK", "FK", "omp"], me) ?? "";
+  expect(out).toContain("\\definechangesauthor[name={Ana}, color=blue]{AK}%");
+  expect(out).toContain("\\definechangesauthor[name={F K}, color=");
+  expect(out).toContain("]{omp}%");
+  expect(out).not.toContain("{proof}");
+  expect(out).toContain("\\PassOptionsToPackage{draft,highlightmarkup=uwave}{changes}");
+  expect(out.endsWith("}\n\\usepackage{changes}\\csname tlreviewsetup\\endcsname\n")).toBe(true);
+  expect(withReviewFallback(out, cfg, ["AK", "FK", "omp"], me)).toBeNull();
+  expect(withReviewFallback("\\usepackage{changes}\n", cfg, ["FK"], me)).toBeNull();
 });

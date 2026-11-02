@@ -16,6 +16,7 @@ import { models } from "./commands/models.ts";
 import { outlineCommand } from "./commands/outline.ts";
 import { peek } from "./commands/peek.ts";
 import { pull } from "./commands/pull.ts";
+import { push } from "./commands/push.ts";
 import { refs } from "./commands/refs.ts";
 import { rewriteCommand } from "./commands/rewrite.ts";
 import { proofreadCommand } from "./commands/proofread.ts";
@@ -61,8 +62,12 @@ writing
                           rebuilt ternlatex and ternlatex.toml changes
   docs                    list the project's documents and their last build
   models                  which model each task uses: omp roles latex (the omp block), proofread, rewrite
-  pull [--json]           in a clone of an Overleaf project: rebase onto Overleaf's latest (never pushes;
-                          omp's extension runs it before omp's first edit of each request)
+  pull [--json]           in a clone of an Overleaf project: rebase onto Overleaf's latest (omp's extension
+                          runs it before omp's first edit of each request; \`dev\` every minute when safe)
+  push [-m MESSAGE] [--json]
+                          in a clone of an Overleaf project: commit your edits (and new files the build
+                          reads), rebase onto Overleaf's latest and push; refused while omp, the
+                          proofreader or dictation have marks in the sources, or a document fails to build
   build [DIR] [--doc NAME] [--all] [--force]
                           build every document (or one), through the running dev server if any;
                           prints diagnostics, exits 1 on errors; --all includes info-level messages.
@@ -175,6 +180,10 @@ async function main(argv: string[]): Promise<number> {
     case "pull": {
       const { values } = parseArgs({ args: rest, allowPositionals: false, options: { json: { type: "boolean", default: false } } });
       return pull(values.json);
+    }
+    case "push": {
+      const { values } = parseArgs({ args: rest, allowPositionals: false, options: { message: { type: "string", short: "m" }, json: { type: "boolean", default: false } } });
+      return push(values.message, values.json);
     }
     case "build": {
       const { values, positionals } = parseArgs({ args: rest, allowPositionals: true, options: { all: { type: "boolean", default: false }, doc: { type: "string" }, force: { type: "boolean", default: false } } });

@@ -49,7 +49,7 @@ A failed build still shows a PDF when it can: `latex_build` then says PARTIAL, t
 
 - Never edit `build/`. The project is a git repo; keep every change reviewable.
 - Never commit unless the user asks. Saves are checkpointed automatically; when asked to commit, write a concise message and add `Co-authored-by: omp <omp@localhost>`.
-- In a clone of an Overleaf project (its git remote is git.overleaf.com, or an Overleaf server's `/git/` URL), co-authors edit in the browser too. ternlatex rebases the clone onto Overleaf's latest before your first edit of each request: when that brings changes, your edit is refused once with the files that changed; read them again, then redo the edit. When it reports that Overleaf could not be pulled, tell the user before editing. Never push unless the user asks; `ternlatex pull` brings the clone up to date by hand.
+- In a clone of an Overleaf project (its git remote is git.overleaf.com, or an Overleaf server's `/git/` URL), co-authors edit in the browser too. ternlatex rebases the clone onto Overleaf's latest before your first edit of each request: when that brings changes, your edit is refused once with the files that changed; read them again, then redo the edit. When it reports that Overleaf could not be pulled, tell the user before editing. `ternlatex pull` brings the clone up to date by hand. Never push or commit for a push: the user pushes (`ternlatex push`, or ⇅ Overleaf in the viewer), which refuses while marks by omp, the proofreader or dictation remain, so co-authors only get edits the user has accepted.
 - Keep diffs minimal. Preserve line structure. Keep one sentence per line where the project already does so.
 - Styling lives in `style/ternlatex.sty` (in imported projects: the existing preamble or style file). Do not put fonts, colours or layout in body files.
 - When the project uses a publisher or venue class (IEEEtran, acmart, llncs, elsarticle, revtex, a NeurIPS/ICML/ICLR/ACL style, a university thesis class), the class owns the layout: do not restyle it, do not load `style/ternlatex.sty` on top of it, and keep the options the venue requires.
@@ -59,7 +59,7 @@ A failed build still shows a PDF when it can: `latex_build` then says PARTIAL, t
 - During prose edits never alter math meaning, citation keys, `\label` names or `\ref`/`\cref` targets.
 - Treat overfull/underfull box warnings as formatting work: fix them at the source (rewording, `tabularx`, line breaks in tables), not by hiding them.
 - Cite only keys from `ternlatex refs search` or the existing .bib; never invent keys or hand-write entries for works in Zotero.
-- When `ternlatex.toml` lists `[review]` authors (a review round is on), mark your prose edits as tracked changes with `id=omp`: `\added[id=omp]{…}`, `\deleted[id=omp]{…}`, `\replaced[id=omp]{new}{old}`, each scoped to the smallest changed span. Edit directly (unmarked) when the user asks, and always inside math, labels/refs/cite keys and tabular alignment. Never accept or reject other authors' changes unless asked; see the `review` skill.
+- When `ternlatex.toml` lists `[review]` authors (a review round is on), or the project is an Overleaf clone, mark your prose edits as tracked changes with `id=omp`: `\added[id=omp]{…}`, `\deleted[id=omp]{…}`, `\replaced[id=omp]{new}{old}`, each scoped to the smallest changed span. Edit directly (unmarked) when the user asks, and always inside math, labels/refs/cite keys and tabular alignment. Never accept or reject other authors' changes unless asked; see the `review` skill.
 
 ## Skills
 

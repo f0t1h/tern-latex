@@ -424,7 +424,10 @@ export async function removeTernPlugin(p: TernPluginInstall): Promise<void> {
  * ask: agent; open: shown or near; popout: pane, or owner), and the flags of ops that leave creating blocks to
  * ternlatex (layoutTab, openSource, popoutViewer).
  */
-export type PluginReply = Partial<Record<(typeof REPLY_NUMBERS)[number], number> & Record<(typeof REPLY_FLAGS)[number], boolean>>;
+export type PluginReply = Partial<Record<(typeof REPLY_NUMBERS)[number], number> & Record<(typeof REPLY_FLAGS)[number], boolean>> & {
+  /** Absolute file paths (`unsaved`). */
+  paths?: string[];
+};
 
 const REPLY_NUMBERS = ["viewer", "editor", "agent", "pane", "owner", "shown", "near", "tabRows"] as const;
 const REPLY_FLAGS = ["needsViewer", "needsEditor", "needsAgent", "above", "opened"] as const;
@@ -501,6 +504,9 @@ export async function awaitReply(file: string, timeoutMs: number, read = (f: str
         if (typeof n === "number") out[k] = n;
       }
       for (const k of REPLY_FLAGS) if (fields[k] === true) out[k] = true;
+      // Lua can't tell an empty array from an empty table: `{}` arrives for none.
+      if (Array.isArray(fields.paths)) out.paths = fields.paths.filter((p) => typeof p === "string");
+      else if (fields.paths && typeof fields.paths === "object") out.paths = [];
       return out;
     }
     if (Date.now() >= deadline) throw new Error(`no answer from the ternlatex Tern plugin within ${timeoutMs / 1000} s; check it with \`ternlatex doctor\``);
@@ -597,6 +603,11 @@ export async function openSource(devPane: number, path: string, line?: number): 
 export async function popoutViewer(devPane: number, url: string): Promise<void> {
   const r = await pluginCall("popout", { devPane, url });
   if (r.needsViewer && r.owner !== undefined) await pluginCall("popout", { devPane, url, pane: await openBrowser(r.owner, url) });
+}
+
+/** Files under `dir` open in Tern with unsaved edits (absolute paths). */
+export async function unsavedFiles(dir: string): Promise<string[]> {
+  return (await pluginCall("unsaved", { dir })).paths ?? [];
 }
 
 /** One of the plugin's editor commands with its default chord as shown on this platform (`⌘⌥J`, `Ctrl+Alt+J`). */

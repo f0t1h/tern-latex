@@ -124,18 +124,32 @@ cd paper && ternlatex import . && ternlatex dev
 Adopting a repository that already has commits changes nothing in it. ternlatex's own files
 (`ternlatex.toml`, `build/`, `style/ternlatex-review.tex`) are listed in the clone's local
 `.git/info/exclude`, not in `.gitignore`, so they stay untracked and are never committed or pushed, and
-`git status` stays clean. Save checkpoints live on their own ref, which `git push` leaves behind. Commit,
-pull and push your edits as usual. Overleaf compiles with pdfLaTeX by default and ternlatex with Tectonic
-(XeLaTeX); if the document needs pdfLaTeX, set `engine = "latexmk"` and `latexmk_args = ["-pdf"]` to use
-your own TeX Live.
+`git status` stays clean. Save checkpoints live on their own ref, which `git push` leaves behind. Overleaf
+compiles with pdfLaTeX by default and ternlatex with Tectonic (XeLaTeX); if the document needs pdfLaTeX,
+set `engine = "latexmk"` and `latexmk_args = ["-pdf"]` to use your own TeX Live.
 
-Co-authors keep editing in Overleaf, so omp works on the latest version: before omp's first edit of each
-request, ternlatex fetches from Overleaf and rebases the clone onto it (your commits on top, uncommitted
-edits to other files kept). When that brought changes, omp's edit is refused once with the files that
-changed, so it reads them again before writing. It never pushes, and it leaves the clone alone (and omp
-tells you) when you have uncommitted edits to a file Overleaf also changed, or a commit of yours
-conflicts with Overleaf's. `ternlatex pull` does the same by hand. Other remotes (GitHub, a co-author's
-server) are not pulled.
+Co-authors keep editing in Overleaf, so ternlatex keeps the clone on Overleaf's latest. While `dev` runs it
+fetches every minute and rebases the clone onto Overleaf's new commits: your commits on top, uncommitted
+edits to other files kept. The PDF rebuilds and the viewer names the files that changed. Before omp's
+first edit of each request it pulls too; when that brought changes, omp's edit is refused once with the
+files that changed, so it reads them again before writing. The clone is left alone, and the viewer (or
+omp) tells you, when Overleaf changed a file you have edited and not pushed yet (unsaved in Tern counts),
+or a commit of yours conflicts with Overleaf's. `ternlatex pull` pulls by hand. Other remotes (GitHub, a
+co-author's server) are not pulled.
+
+**⇅ Overleaf** in the viewer shows where you stand: `↓2` Overleaf has two commits you don't, `↑•` you
+have edits it doesn't, `⚠` a pull was held off (the menu says why). **Push to Overleaf…** (or `ternlatex
+push -m "message"`) commits your edited files and the new files the build reads (a figure you added),
+rebases onto Overleaf, builds and pushes. It refuses while omp, the proofreader or dictation still have
+marks in the sources: accept or reject them in ✎ Review first, so co-authors only get edits you made or
+accepted (in an Overleaf clone omp always marks its prose edits for this). It also refuses while a
+document fails to build, or builds only partially.
+
+Overleaf has no `style/ternlatex-review.tex`, so a document that loads it with a fallback,
+`\InputIfFileExists{style/ternlatex-review.tex}{}{…}`, defines its review authors there for Overleaf.
+A mark by an author the fallback lacks would stop Overleaf's build with "Undefined changes author", so when
+the sources have marks by such an author (yours, say), ternlatex adds them to the fallback, with the name
+and colour it uses locally, and keeps the entries a co-author added. Otherwise it leaves the file alone.
 
 ## Using ternlatex
 
@@ -319,7 +333,8 @@ final = false   # true: typeset as if everything were accepted, without markup
 ```
 
 Mark edits with `\added[id=AK]{…}`, `\deleted[id=AK]{…}`, `\replaced[id=AK]{new}{old}` and
-`\comment[id=AK]{…}`. While authors are listed, omp marks its own prose edits with `id=omp`.
+`\comment[id=AK]{…}`. While authors are listed, and always in an Overleaf clone, omp marks its own prose
+edits with `id=omp`.
 
 Or mark the PDF itself: select text in the viewer and use the action bar's review tools (Strike,
 Replace…, Insert…, Highlight, Comment…). The marks carry your id: `me = "AK"` under `[review]` if set,
@@ -435,7 +450,8 @@ Run commands anywhere inside a project (a folder with `ternlatex.toml`), or pass
 | `stop [DIR]` / `restart [DIR]` | stops or restarts the running dev server |
 | `docs` | lists the project's documents and their last build |
 | `models` | shows which model each task uses (omp roles `latex`, `proofread`, `rewrite`) |
-| `pull [--json]` | in a clone of an Overleaf project, rebases onto Overleaf's latest; never pushes |
+| `pull [--json]` | in a clone of an Overleaf project, rebases onto Overleaf's latest (`dev` does it every minute when safe) |
+| `push [-m MESSAGE] [--json]` | in a clone of an Overleaf project, commits your edits, rebases onto Overleaf and pushes; refused while omp, the proofreader or dictation have marks in the sources, or a document fails to build |
 | `build [DIR] [--doc NAME] [--all] [--force]` | builds through the running dev server if any; prints `file:line: severity: message`, exits 1 on errors; `--all` adds info messages |
 | `snapshot (--page N \| FILE:LINE) [--doc NAME] [--dpi N] [--out PNG]` | renders one PDF page to PNG (default `build/snapshots/<doc>-page-N.png`) |
 | `show FILE:LINE [--doc NAME]` | scrolls the viewer to a source line and highlights it |

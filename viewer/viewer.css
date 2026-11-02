@@ -244,14 +244,20 @@ button:disabled { opacity: 0.45; cursor: default; background: none; }
 .tool { display: inline-flex; align-items: center; gap: 4px; line-height: 1; padding: 3px 6px; }
 .tool .glyph { font-size: 14px; line-height: 1; }
 .tool[aria-pressed="true"] { background: var(--btn-hover); }
-#changes-btn .spinner { display: none; width: 11px; height: 11px; }
-#changes-btn.busy .spinner { display: inline-block; }
-#changes-btn.busy .glyph { display: none; }
+#changes-btn .spinner, #overleaf-btn .spinner { display: none; width: 11px; height: 11px; }
+#changes-btn.busy .spinner, #overleaf-btn.busy .spinner { display: inline-block; }
+#changes-btn.busy .glyph, #overleaf-btn.busy .glyph { display: none; }
+#overleaf-badge { color: var(--muted); font-variant-numeric: tabular-nums; }
+#overleaf-badge:empty { display: none; }
+#overleaf-btn.behind #overleaf-badge { color: var(--info); font-weight: 600; }
+#overleaf-btn.problem #overleaf-badge { color: var(--warn); font-weight: 600; }
+#overleaf-summary .menu-note { white-space: normal; }
+#overleaf-summary .menu-note.problem { color: var(--warn); }
 #review-btn #review-count { color: var(--muted); font-variant-numeric: tabular-nums; }
 #review-btn.has-items #review-count { color: var(--info); font-weight: 600; }
 
-#changes-wrap { position: relative; display: flex; }
-#changes-menu {
+#changes-wrap, #overleaf-wrap { position: relative; display: flex; }
+#changes-menu, #overleaf-menu {
   position: absolute;
   top: calc(100% + 6px);
   right: 0;
@@ -269,14 +275,14 @@ button:disabled { opacity: 0.45; cursor: default; background: none; }
   border-radius: 6px;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.3);
 }
-#changes-menu button { display: flex; gap: 8px; width: 100%; text-align: left; padding: 4px 8px; }
+#changes-menu button, #overleaf-menu button { display: flex; gap: 8px; width: 100%; text-align: left; padding: 4px 8px; }
 #changes-live { font-weight: 600; }
 .menu-group { display: flex; flex-direction: column; }
 .menu-item .when { flex: none; min-width: 64px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .menu-item .what { overflow: hidden; text-overflow: ellipsis; }
 .menu-sep { height: 1px; margin: 4px 2px; background: var(--bar-border); }
 .menu-note { padding: 4px 8px; color: var(--muted); }
-#changes-rev {
+#changes-rev, #overleaf-message {
   margin: 2px 4px 4px;
   font: 11.5px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   color: inherit;

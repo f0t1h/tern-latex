@@ -30,7 +30,7 @@ Only when the user asks for a thorough proofread, look across the scope for:
    project's dash style, ``` ``quotes'' ``` or `\enquote`, `\ldots`, `e.g.\ `, siunitx for numbers and units.
    Include `ternlatex lint <files>` findings.
 
-Make these edits as tracked changes with `id=omp` when a review round is on (see AGENTS.md), otherwise
+Make these edits as tracked changes with `id=omp` when a review round is on or the project is an Overleaf clone (see AGENTS.md), otherwise
 minimal direct edits. Never change math, keys, labels, paths, numbers or technical claims; never reflow lines.
 
 ## 3. Report

@@ -98,6 +98,13 @@ const ui = {
   changesCheckpoints: $('changes-checkpoints'),
   changesCustom: $('changes-custom'),
   changesRev: $('changes-rev'),
+  overleafBtn: $('overleaf-btn'),
+  overleafBadge: $('overleaf-badge'),
+  overleafMenu: $('overleaf-menu'),
+  overleafSummary: $('overleaf-summary'),
+  overleafPull: $('overleaf-pull'),
+  overleafPush: $('overleaf-push'),
+  overleafMessage: $('overleaf-message'),
   diffBar: $('diff-bar'),
   diffLabel: $('diff-label'),
   diffBack: $('diff-back'),
@@ -141,6 +148,7 @@ const state = {
   fitWidth: true,
   status: null, // Status of the current document
   connected: false,
+  overleaf: null, // OverleafState from the server (src/overleaf.ts), null outside an Overleaf clone
   bannerDismissedKey: null,
   pendingReveal: null,
   pendingPos: null, // reading position to restore at the next swap (document switch)
@@ -2035,7 +2043,7 @@ let capsSeq = 0;
 
 async function fetchCaps() {
   const seq = ++capsSeq;
-  let caps = { agent: false, editor: false, popout: false, history: false, proofread: false, keys: null, dictation: null, reviewer: null };
+  let caps = { agent: false, editor: false, popout: false, history: false, proofread: false, overleaf: false, keys: null, dictation: null, reviewer: null };
   let answered = false;
   try {
     const res = await fetch('/capabilities', { cache: 'no-store' });
@@ -2048,7 +2056,7 @@ async function fetchCaps() {
       const dictation = d && typeof d.ready === 'boolean' ? { ready: d.ready, hint: typeof d.hint === 'string' ? d.hint : '' } : null;
       const r = c?.reviewer;
       const reviewer = r && typeof r.id === 'string' && typeof r.name === 'string' ? { id: r.id, name: r.name } : null;
-      caps = { agent: c?.agent === true, editor: c?.editor === true, popout: c?.popout === true, history: c?.history === true, proofread: c?.proofread === true, rewrite: c?.rewrite === true, keys, dictation, reviewer };
+      caps = { agent: c?.agent === true, editor: c?.editor === true, popout: c?.popout === true, history: c?.history === true, proofread: c?.proofread === true, rewrite: c?.rewrite === true, overleaf: c?.overleaf === true, keys, dictation, reviewer };
       answered = true;
     }
   } catch {
@@ -2060,6 +2068,8 @@ async function fetchCaps() {
   renderDocs();
   ui.changesBtn.hidden = !caps.history;
   if (!caps.history) closeChangesMenu();
+  ui.overleafBtn.hidden = !caps.overleaf;
+  if (!caps.overleaf) closeOverleafMenu();
   if (answered) updateTip();
   if (!ui.help.hidden) renderHelp();
   // Fix buttons depend on caps.agent, which may arrive after the first status.
@@ -2676,6 +2686,93 @@ async function openChangesMenu() {
   );
 }
 
+// ---------------------------------------------------------------- Overleaf (src/overleaf.ts)
+
+let overleafBusy = false;
+let overleafToasted = null; // checkedAt of the last state whose pull was announced
+
+function onOverleaf(s) {
+  state.overleaf = s;
+  if (s.pulled?.commits && s.checkedAt !== overleafToasted) {
+    overleafToasted = s.checkedAt;
+    toast(`Pulled ${plural(s.pulled.commits, 'commit')} from Overleaf: ${s.pulled.files.join(', ')}`, 5000);
+  }
+  renderOverleaf();
+}
+
+function renderOverleaf() {
+  const s = state.overleaf;
+  const btn = ui.overleafBtn;
+  btn.classList.toggle('busy', overleafBusy);
+  btn.classList.toggle('behind', Boolean(s?.behind));
+  btn.classList.toggle('problem', Boolean(s?.problem));
+  const badge = [];
+  if (s?.problem) badge.push('⚠');
+  if (s?.behind) badge.push(`↓${s.behind}`);
+  if (s?.ahead || s?.edited.length) badge.push(`↑${s.ahead || '•'}`);
+  ui.overleafBadge.textContent = badge.join(' ');
+  const notes = [];
+  const note = (text, cls) => notes.push(el('div', `menu-note${cls ? ` ${cls}` : ''}`, text));
+  if (!s) note('Checking Overleaf…');
+  else {
+    if (s.problem) note(s.problem, 'problem');
+    if (s.behind) note(`Overleaf has ${plural(s.behind, 'new commit')}: ${s.incoming.join(', ')}`);
+    if (s.edited.length) note(`Not pushed: edits to ${s.edited.join(', ')}`);
+    if (s.ahead) note(`Not pushed: ${plural(s.ahead, 'commit')}`);
+    if (!s.behind && !s.ahead && !s.edited.length && !s.problem) note('Same as Overleaf');
+    note(`Checked ${clockTime(s.checkedAt)}`);
+  }
+  ui.overleafSummary.replaceChildren(...notes);
+  ui.overleafPull.disabled = overleafBusy;
+  ui.overleafPush.disabled = overleafBusy;
+  btn.title = s?.problem ? `Overleaf: ${s.problem}` : "Overleaf: pull co-authors' edits, push yours";
+}
+
+function closeOverleafMenu() {
+  ui.overleafMenu.hidden = true;
+  ui.overleafBtn.setAttribute('aria-expanded', 'false');
+}
+
+function openOverleafMenu() {
+  ui.overleafMenu.hidden = false;
+  ui.overleafBtn.setAttribute('aria-expanded', 'true');
+  ui.overleafMessage.hidden = true;
+  ui.overleafPush.hidden = false;
+  renderOverleaf();
+}
+
+/** Runs a pull or push; the server's `overleaf` event brings the new state. */
+async function overleafAction(path, body, done) {
+  if (overleafBusy) return;
+  overleafBusy = true;
+  renderOverleaf();
+  try {
+    const res = await postJSON(path, body);
+    const j = await res.json().catch(() => null);
+    if (!res.ok || !j) toast(`Overleaf: ${j?.error ?? `failed (${res.status})`}`, 5000);
+    else done(j);
+  } catch {
+    toast('Overleaf: server unreachable');
+  } finally {
+    overleafBusy = false;
+    renderOverleaf();
+  }
+}
+
+function pushOverleaf(message) {
+  ui.overleafMessage.hidden = true;
+  ui.overleafPush.hidden = false;
+  overleafAction('/overleaf/push', { message }, (r) => {
+    if (r.problem) {
+      toast(`Not pushed: ${r.problem}`, 8000);
+      return;
+    }
+    closeOverleafMenu();
+    const pulled = r.pulled ? `pulled ${plural(r.pulled, 'commit')} first, ` : '';
+    toast(r.pushed ? `Pushed ${plural(r.pushed, 'commit')} to Overleaf (${pulled}${r.committed.length ? `committed ${r.committed.join(', ')}` : 'already committed'})` : `Nothing to push: ${pulled}Overleaf has all your commits`, 5000);
+  });
+}
+
 // ---------------------------------------------------------------- review panel (changes package)
 
 const ANON = '-'; // filter key for items without an author (author ids are alphanumeric)
@@ -2944,6 +3041,10 @@ function connect() {
     setConnected(true);
     const s = parse(e.data);
     if (s && typeof s === 'object') onStatus(s);
+  });
+  es.addEventListener('overleaf', (e) => {
+    const s = parse(e.data);
+    if (s && typeof s === 'object') onOverleaf(s);
   });
   es.addEventListener('reveal', (e) => {
     const r = parse(e.data);
@@ -3643,7 +3744,34 @@ ui.changesRev.addEventListener('keydown', (e) => {
 });
 document.addEventListener('mousedown', (e) => {
   if (!ui.changesMenu.hidden && !ui.changesMenu.parentElement.contains(e.target)) closeChangesMenu();
+  if (!ui.overleafMenu.hidden && !ui.overleafMenu.parentElement.contains(e.target)) closeOverleafMenu();
   if (!ui.help.hidden && !ui.help.contains(e.target) && !ui.helpBtn.contains(e.target)) setHelp(false);
+});
+ui.overleafBtn.addEventListener('click', () => {
+  if (ui.overleafMenu.hidden) openOverleafMenu();
+  else closeOverleafMenu();
+});
+ui.overleafPull.addEventListener('click', () =>
+  overleafAction('/overleaf/pull', {}, (s) => {
+    if (s.problem) toast(`Not pulled: ${s.problem}`, 8000);
+    else if (!s.pulled?.commits) toast('Already up to date with Overleaf');
+  }),
+);
+ui.overleafPush.addEventListener('click', () => {
+  ui.overleafPush.hidden = true;
+  ui.overleafMessage.hidden = false;
+  ui.overleafMessage.value = '';
+  ui.overleafMessage.focus();
+});
+ui.overleafMessage.addEventListener('keydown', (e) => {
+  e.stopPropagation(); // keep global shortcuts out of the input
+  if (e.key === 'Enter' && !e.isComposing) {
+    e.preventDefault();
+    pushOverleaf(ui.overleafMessage.value.trim());
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    closeOverleafMenu();
+  }
 });
 ui.helpBtn.addEventListener('click', () => setHelp(ui.help.hidden));
 ui.tipClose.addEventListener('click', dismissTip);

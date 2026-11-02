@@ -553,6 +553,22 @@ local function op_popout(args: { [string]: any }, cx: WindowCx, done: Done)
 	done({ needsViewer = true, owner = anchor })
 end
 
+-- File blocks with unsaved edits to files under `dir`, so ternlatex doesn't
+-- pull Overleaf's version of a file over edits not on disk yet.
+local function op_unsaved(args: { [string]: any }, cx: WindowCx, done: Done)
+	local dir = string_arg(args, "dir")
+	local paths: { string } = {}
+	for _, p in cx.session:panes() do
+		if p.kind == "file" and p.path and string.sub(p.path, 1, #dir + 1) == dir .. "/" then
+			local read: any = cx.session:read(p.pane, { lines = 0 })
+			if type(read) == "table" and read.dirty == true and not table.find(paths, p.path) then
+				table.insert(paths, p.path)
+			end
+		end
+	end
+	done({ paths = paths })
+end
+
 -- One `kind` block per project (pane ids by dir in `tern.kv` under `key`),
 -- so a second request focuses the first.
 local function project_block(cx: WindowCx, key: string, kind: string, dir: string): number?
@@ -639,6 +655,7 @@ local OPS: { [string]: Op } = {
 	ask = op_ask,
 	open = op_open,
 	popout = op_popout,
+	unsaved = op_unsaved,
 }
 
 ---------------------------------------------------------------------------

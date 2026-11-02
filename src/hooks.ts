@@ -1,5 +1,5 @@
 import type { BuildHooks } from "./builder.ts";
-import { writeReviewSetup } from "./changes.ts";
+import { syncReviewFallback, writeReviewSetup } from "./changes.ts";
 import { type Config, loadConfig } from "./config.ts";
 import { checkpoint } from "./vcs.ts";
 import { importCitations, ZoteroError } from "./zotero.ts";
@@ -20,6 +20,8 @@ export function projectHooks(cfg: Config): BuildHooks {
         }
       })();
       await writeReviewSetup({ ...cfg, review });
+      // The tracked fallback (for Overleaf, which has no review setup) learns new authors before a mark of theirs is pushed.
+      await syncReviewFallback({ ...cfg, review }).catch(() => []);
     },
     afterBuild: async (_doc, status) => {
       if (!cfg.zotero.autoImport || !status.ok) return {};

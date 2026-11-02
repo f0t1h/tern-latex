@@ -3,9 +3,10 @@ import { realpathSync } from "node:fs";
 import { join, relative } from "node:path";
 import { Builder, failedPdf, type Status } from "../builder.ts";
 import { reviewer } from "../changes.ts";
-import { loadConfig } from "../config.ts";
+import { loadConfig, posix } from "../config.ts";
 import { projectHooks } from "../hooks.ts";
 import { buildDiff } from "../latexdiff.ts";
+import { isOverleafClone, OverleafSync } from "../overleaf.ts";
 import { listCheckpoints } from "../vcs.ts";
 import { resolveReview, reviewList } from "../suggestions.ts";
 import { formatHunk, proofread } from "../proofread.ts";
@@ -14,7 +15,7 @@ import { rewrite } from "../rewrite.ts";
 import { formatDiagnostic } from "../diagnostics.ts";
 import { startServer } from "../server.ts";
 import { inTern } from "../tern.ts";
-import { ensureTernPlugin, layoutTab, openSource, pluginCall, popoutViewer, ternKeys } from "../ternplugin.ts";
+import { ensureTernPlugin, layoutTab, openSource, pluginCall, popoutViewer, ternKeys, unsavedFiles } from "../ternplugin.ts";
 import { speechStatus, transcribe } from "../speech.ts";
 import { openWithDefaultApp, selfCommand } from "../tools.ts";
 import { runningServer } from "./remote.ts";
@@ -54,6 +55,10 @@ export async function dev(target: string, o: DevOptions): Promise<number> {
   const dir = realpathSync(cfg.dir); // The plugin compares Tern's resolved paths.
   const builder = new Builder(cfg, projectHooks(cfg));
   const keys = plugin ? await ternKeys() : undefined;
+  // An Overleaf clone follows Overleaf in the background; files with unsaved edits in Tern hold that off.
+  const overleaf = (await isOverleafClone(cfg.dir))
+    ? new OverleafSync(cfg, async () => (plugin ? (await unsavedFiles(dir)).map((p) => posix(relative(dir, p))) : []))
+    : undefined;
   const server = await startServer({
     builder,
     port: o.port ?? (cfg.port || stablePort(cfg.dir)),
@@ -81,6 +86,7 @@ export async function dev(target: string, o: DevOptions): Promise<number> {
     rewrite: async (req) => rewrite(cfg, req, await taskModel(cfg, "rewrite")),
     restart: () => stop("restart"),
     stop: () => stop("stop"),
+    overleaf,
   });
 
   const title = new DevTitle();
@@ -92,6 +98,15 @@ export async function dev(target: string, o: DevOptions): Promise<number> {
   const docs = cfg.docs.map((d) => (d.name === d.root.replace(/\.tex$/, "") ? d.root : `${d.name} (${d.root})`)).join(", ");
   console.log(`ternlatex dev: ${docs} (${cfg.engine}) → ${server.url}\nwatching ${cfg.dir}; Ctrl-C to stop`);
   if (keys) console.log(`Tern keys: ${keys.map((k) => `${k.display} ${k.title}`).join(" · ")}`);
+  if (overleaf) {
+    let problem: string | undefined;
+    overleaf.onState((s) => {
+      if (s.pulled?.commits) console.log(`[${new Date().toLocaleTimeString()}] pulled ${s.pulled.commits} commit(s) from Overleaf: ${s.pulled.files.join(", ")}`);
+      if (s.problem && s.problem !== problem) console.warn(`[${new Date().toLocaleTimeString()}] Overleaf: ${s.problem}`);
+      problem = s.problem;
+    });
+    overleaf.start();
+  }
 
   if (plugin) {
     // Tern's daemon starts blocks with its own environment, so hand the agent block this PATH explicitly.
@@ -124,6 +139,7 @@ export async function dev(target: string, o: DevOptions): Promise<number> {
     for (const s of SIGNALS) process.off(s, onSignal);
     console.log(why === "restart" ? "\nrestarting…" : "\nstopped");
     builder.close();
+    overleaf?.stop();
     title.reset();
     void server.close().then(() => done.resolve(why));
   };

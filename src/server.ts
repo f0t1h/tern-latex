@@ -12,6 +12,7 @@ import { SyncTex } from "./synctex.ts";
 import { lineEndOffset, type LocatedRange, locateRange, locateSelection, type SelectionContext } from "./locate.ts";
 import { isMarkKind, markHunks } from "./marks.ts";
 import { changesLoaded, type Hunk, writeSuggestions } from "./proofread.ts";
+import type { OverleafSync } from "./overleaf.ts";
 import { offsetOf, type Position, positionOf, type RewriteRequest, type RewriteResult, widenToSentences } from "./rewrite.ts";
 import { pcm16, type SpeechStatus, spokenLatex } from "./speech.ts";
 import type { TernKey } from "./ternplugin.ts";
@@ -43,6 +44,8 @@ export interface ServerOptions {
   restart?: () => void;
   /** Stops the dev server (`ternlatex stop`); called after the response is sent. */
   stop?: () => void;
+  /** Keeps an Overleaf clone in step (src/overleaf.ts); absent in other projects. */
+  overleaf?: OverleafSync;
 }
 
 export interface ProofreadSummary {
@@ -148,6 +151,7 @@ export async function startServer(o: ServerOptions): Promise<DevServer> {
   };
   const onStatus = (s: Status) => sse("status", s);
   builder.on("status", onStatus);
+  const offOverleaf = o.overleaf?.onState((s) => sse("overleaf", s));
 
   /** The document a request names (`?doc=` or a `doc` body field), defaulting to the first. */
   const docOf = (name: unknown): DocConfig | null => {
@@ -246,6 +250,7 @@ export async function startServer(o: ServerOptions): Promise<DevServer> {
           review: Boolean(o.review),
           proofread: Boolean(o.proofread),
           rewrite: Boolean(o.rewrite),
+          overleaf: Boolean(o.overleaf),
           ...(o.review ? { reviewer: o.review.me } : {}),
           ...(o.keys ? { keys: o.keys } : {}),
           ...(o.dictation ? { dictation: await speechReady(o.dictation) } : {}),
@@ -256,10 +261,20 @@ export async function startServer(o: ServerOptions): Promise<DevServer> {
         res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-store", connection: "keep-alive" });
         res.write("retry: 1000\n\n");
         for (const s of builder.all()) res.write(`event: status\ndata: ${JSON.stringify(s)}\n\n`);
+        if (o.overleaf?.state) res.write(`event: overleaf\ndata: ${JSON.stringify(o.overleaf.state)}\n\n`);
         if (url.searchParams.has("doc")) builder.prioritize(doc.name);
         clients.add(res);
         req.on("close", () => clients.delete(res));
         return;
+      }
+      if (route === "POST /overleaf/pull") {
+        if (!o.overleaf) return send(res, 404, { error: "this project is no Overleaf clone" });
+        return send(res, 200, await o.overleaf.check());
+      }
+      if (route === "POST /overleaf/push") {
+        if (!o.overleaf) return send(res, 404, { error: "this project is no Overleaf clone" });
+        const message = typeof body.message === "string" ? body.message : undefined;
+        return send(res, 200, await o.overleaf.push({ message, build: () => builder.request(undefined, { force: false }) }));
       }
       // The viewer reports the document on screen so it is rebuilt first.
       if (route === "POST /focus") {
@@ -512,6 +527,7 @@ export async function startServer(o: ServerOptions): Promise<DevServer> {
     async close() {
       clearInterval(ping);
       builder.off("status", onStatus);
+      offOverleaf?.();
       for (const c of clients) c.end();
       await unlink(p.server).catch(() => {});
       const { promise, resolve } = Promise.withResolvers<void>();
