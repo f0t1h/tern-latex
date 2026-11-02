@@ -95,6 +95,8 @@ button:disabled { opacity: 0.45; cursor: default; background: none; }
 #build-state.state-building .spinner { display: inline-block; }
 #build-state.state-ok #build-label { color: var(--ok); }
 #build-state.state-failed #build-label { color: var(--err); }
+#build-state.state-partial #build-label { color: var(--warn); }
+#build-state.state-partial #build-label::before { content: "⚠ "; }
 #build-state.state-ok #build-label::before { content: "✓ "; }
 #build-state.state-failed #build-label::before { content: "✕ "; }
 

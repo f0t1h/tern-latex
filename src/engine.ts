@@ -1,20 +1,28 @@
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { type Config, type DocConfig, docPaths, posix } from "./config.ts";
 import { type Diagnostic, mergeDiagnostics, parseLog, parseTectonicOutput } from "./diagnostics.ts";
+import { missingFiles, writePlaceholders } from "./placeholders.ts";
 import { resolveTool, ToolMissingError } from "./tools.ts";
 
 export interface CompileResult {
   ok: boolean;
-  diagnostics: Diagnostic[];
-  /** Files in the staging directory; pdf/synctex only meaningful when ok. */
+  /**
+   * Not ok, yet there is a PDF: built again past the errors (Config.partial), missing images and \input files
+   * drawn as placeholders. The diagnostics are the failed build's.
+   */
+  partial: boolean;
+  /** Files in the staging directory; pdf/synctex only meaningful when ok or partial. */
   pdf: string;
   synctex: string;
   log: string;
+  diagnostics: Diagnostic[];
   /** Project-relative files this run read; null when the engine cannot tell (latexmk). */
   deps: string[] | null;
+  /** Placeholders a partial build used, as the sources name the missing files. */
+  placeholders?: string[];
 }
 
 /** Compiles one document into its staging directory. Never touches the published outputs. */
@@ -32,12 +40,12 @@ export async function compile(cfg: Config, doc: DocConfig): Promise<CompileResul
     command = (await resolveTool(cfg.engine, cfg)).command;
   } catch (e) {
     if (!(e instanceof ToolMissingError)) throw e;
-    return { ok: false, ...staged, deps: null, diagnostics: [{ severity: "error", message: e.message }] };
+    return { ok: false, partial: false, ...staged, deps: null, diagnostics: [{ severity: "error", message: e.message }] };
   }
   const cmd = cfg.engine;
   const run = await exec(command, args, cfg.dir);
-  if (run.spawnError) return { ok: false, ...staged, deps: null, diagnostics: [{ severity: "error", message: `cannot run ${command[0]}: ${run.spawnError}` }] };
-  const fresh = (f: string) => existsSync(f) && statSync(f).mtimeMs >= started - 1000;
+  if (run.spawnError) return { ok: false, partial: false, ...staged, deps: null, diagnostics: [{ severity: "error", message: `cannot run ${command[0]}: ${run.spawnError}` }] };
+  const fresh = (f: string, since = started) => existsSync(f) && statSync(f).mtimeMs >= since - 1000;
   const logText = fresh(staged.log) ? readFileSync(staged.log, "utf8") : "";
   const ok = run.code === 0 && fresh(staged.pdf);
   const all = mergeDiagnostics(
@@ -50,9 +58,55 @@ export async function compile(cfg: Config, doc: DocConfig): Promise<CompileResul
     const tail = run.output.trim().split("\n").slice(-5).join("\n");
     diagnostics.unshift({ severity: "error", message: `${cmd} exited with ${run.code}${tail ? `: ${tail}` : ""}` });
   }
-  const deps = ok && fresh(p.deps) ? parseDeps(readFileSync(p.deps, "utf8"), cfg.dir, relative(cfg.dir, p.staging)) : null;
-  return { ok, ...staged, deps, diagnostics };
+  const depsOf = (since: number) => (fresh(p.deps, since) ? parseDeps(readFileSync(p.deps, "utf8"), cfg.dir, relative(cfg.dir, p.staging)) : null);
+  if (ok || !cfg.partial) return { ok, partial: false, ...staged, deps: ok ? depsOf(started) : null, diagnostics };
+
+  // Partial build: again, past the errors (Tectonic's continue-on-errors, latexmk -f), with stand-ins for the
+  // missing files on Tectonic's search path. A run stopped by an error only reports the first missing file, so
+  // each pass adds the files the last one reported, up to PARTIAL_PASSES.
+  const dir = join(p.staging, "missing");
+  const missingErrors = new Map<string, Diagnostic>();
+  const noteMissing = (list: Diagnostic[]) => {
+    for (const d of list) for (const name of missingFiles([d])) if (!missingErrors.has(name)) missingErrors.set(name, d);
+  };
+  noteMissing(all);
+  let placeholders: string[] = [];
+  let result: { partial: boolean; diagnostics: Diagnostic[]; since: number } = { partial: false, diagnostics, since: Date.now() };
+  for (let pass = 0; pass < PARTIAL_PASSES; pass++) {
+    const since = Date.now();
+    const known = missingErrors.size;
+    placeholders = cfg.engine === "tectonic" ? await writePlaceholders(dir, [...missingErrors.keys()]) : [];
+    const partialArgs =
+      cfg.engine === "tectonic"
+        ? [...args.slice(0, 2), "-Z", "continue-on-errors", ...(placeholders.length ? ["-Z", `search-path=${dir}`] : []), ...args.slice(2)]
+        : ["-f", ...args];
+    const again = await exec(command, partialArgs, cfg.dir);
+    if (again.spawnError) break;
+    const passDiagnostics = mergeDiagnostics(
+      cfg.engine === "tectonic" ? parseTectonicOutput(again.output, cfg.dir) : [],
+      parseLog(fresh(staged.log, since) ? readFileSync(staged.log, "utf8") : "", cfg.dir),
+    ).filter((d) => !PARTIAL_NOISE.test(d.message));
+    noteMissing(passDiagnostics);
+    result = { partial: fresh(staged.pdf, since), diagnostics: passDiagnostics, since };
+    if (cfg.engine !== "tectonic" || missingErrors.size === known) break;
+  }
+  if (!result.partial) return { ok: false, partial: false, ...staged, deps: null, diagnostics };
+  // The partial run's own diagnostics (every error, not just the first), plus what was missing: placeholders
+  // hid those errors from it.
+  return {
+    ok: false,
+    partial: true,
+    ...staged,
+    deps: depsOf(result.since),
+    diagnostics: mergeDiagnostics([...missingErrors.values()], result.diagnostics),
+    ...(placeholders.length ? { placeholders } : {}),
+  };
 }
+
+/** Partial builds a missing file can take: each finds the next missing \input or figure an error stopped at. */
+const PARTIAL_PASSES = 4;
+/** What a partial run says about running partially: Tectonic's note that errors were ignored, TeX's file prompt. */
+const PARTIAL_NOISE = /errors were issued by the TeX engine, but were ignored|File [`'"]\.['"] not found/;
 
 /**
  * Project files named in Tectonic's Makefile rules (`target : dep dep \`, spaces escaped as `\ `), as

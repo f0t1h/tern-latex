@@ -31,7 +31,7 @@ Everything else runs through the `ternlatex` CLI:
 - `ternlatex outline [--doc NAME] [--json]`: the document's sections, floats and labelled equations with their numbers, then problems (undefined refs, unused/duplicate labels, missing citations) as `file:line: kind: key`.
 - `ternlatex refs add KEY...` / `ternlatex refs sync`: append Zotero entries for those keys / for every cited key no .bib defines (never touches existing entries). Undefined citations are also imported automatically after each build.
 - `ternlatex changes [--author ID]`, `ternlatex accept|reject (ID...|--author ID|--all)`, `ternlatex comments import FILE.pdf --author ID`: tracked changes and comments (`changes` package).
-- `build/status.json`: `{docs: [{doc, root, build, rev, state, ok, diagnostics:[{severity,file,line,message}]}]}`.
+- `build/status.json`: `{docs: [{doc, root, build, rev, state, ok, partial, placeholders, diagnostics:[{severity,file,line,message}]}]}`.
 
 ## Working loop
 
@@ -42,6 +42,8 @@ Everything else runs through the `ternlatex` CLI:
 5. Call `latex_show` when the user should look at the change.
 
 Never leave the build broken. If you cannot fix an error, revert your change and tell the user.
+
+A failed build still shows a PDF when it can: `latex_build` then says PARTIAL, the PDF is built past the errors, and missing figures or `\input` files (often not yet pushed by a co-author on Overleaf) are drawn as placeholder boxes. That build is still broken: fix what you caused; for files that are missing, tell the user rather than creating stand-ins.
 
 ## Rules
 

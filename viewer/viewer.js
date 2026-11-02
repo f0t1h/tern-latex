@@ -51,6 +51,7 @@ const ui = {
   zoomIn: $('zoom-in'),
   banner: $('banner'),
   bannerClose: $('banner-close'),
+  bannerTitle: $('banner-title'),
   bannerList: $('banner-list'),
   diagPanel: $('diag-panel'),
   diagClose: $('diag-close'),
@@ -2079,8 +2080,9 @@ function applyStatus(s) {
     // A cached PDF: these exact sources were built before (an undo, a revert, a restart).
     label = s.cached ? 'Reused earlier build' : s.durationMs != null ? `Built in ${(s.durationMs / 1000).toFixed(1)}s` : 'Built';
   } else if (s.ok === false) {
-    cls = 'state-failed';
-    label = 'Build failed';
+    // A partial build: the PDF on screen was built past the errors; missing files show as placeholders.
+    cls = s.partial ? 'state-partial' : 'state-failed';
+    label = s.partial ? 'Built with errors' : 'Build failed';
   } else {
     cls = 'state-idle';
     label = 'Waiting for build';
@@ -2125,7 +2127,10 @@ function updateBanner() {
   const s = state.status;
   const show = !!(s && s.ok === false && state.doc && state.bannerDismissedKey !== bannerKey());
   ui.banner.hidden = !show;
-  if (show) fillList(ui.bannerList, errorsOf(diagnostics()));
+  if (!show) return;
+  const missing = s.placeholders?.length ? `; ${s.placeholders.length === 1 ? 'a missing file shows as a placeholder' : 'missing files show as placeholders'}` : '';
+  ui.bannerTitle.textContent = s.partial ? `Built past the errors — this PDF may be incomplete${missing}` : 'Build failed — showing last good PDF';
+  fillList(ui.bannerList, errorsOf(diagnostics()));
 }
 
 // Diagnostics and Review share the right edge; only one is open at a time.
@@ -2382,7 +2387,7 @@ function docTitle(d, i) {
     const when = d.builtAt ? relTime(new Date(d.builtAt).toISOString()) : `build #${s.build}`;
     const took = s.cached ? ', reused an earlier build of the same sources' : s.durationMs != null ? `, took ${(s.durationMs / 1000).toFixed(1)}s` : '';
     const nErr = errorsOf(s.diagnostics ?? []).length;
-    const result = s.ok === false ? ` — failed (${plural(nErr, 'error')})` : '';
+    const result = s.ok === false ? ` — ${s.partial ? 'partial PDF' : 'failed'} (${plural(nErr, 'error')})` : '';
     lines.push(`Last build: ${when}${took}${result}`);
   }
   if (i < 9) lines.push(`${IS_MAC ? '⌥' : 'Alt+'}${i + 1}`);

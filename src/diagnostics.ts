@@ -175,7 +175,8 @@ function unwrap(text: string): string[] {
 /** Merges diagnostics from several sources, dropping repeats (TeX reruns print everything again). */
 export function mergeDiagnostics(...lists: Diagnostic[][]): Diagnostic[] {
   const all = lists.flat();
-  const text = (d: Diagnostic) => d.message.replace(/\s+/g, " ").toLowerCase();
+  // Tectonic's summary and the .log word the same error with and without a final period.
+  const text = (d: Diagnostic) => d.message.replace(/\s+/g, " ").replace(/\.$/, "").toLowerCase();
   // A located copy of a message supersedes an unlocated one.
   const located = new Set(all.filter((d) => d.file !== undefined).map(text));
   const seen = new Set<string>();

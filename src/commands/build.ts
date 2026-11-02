@@ -1,4 +1,4 @@
-import { Builder, type ProjectStatus, type Status } from "../builder.ts";
+import { Builder, failedPdf, type ProjectStatus, type Status } from "../builder.ts";
 import { loadConfig, resolveDoc } from "../config.ts";
 import { projectHooks } from "../hooks.ts";
 import { formatDiagnostic } from "../diagnostics.ts";
@@ -26,7 +26,7 @@ export async function build(target: string, all: boolean, docName?: string, forc
     const count = (s: string) => status.diagnostics.filter((d) => d.severity === s).length;
     const hidden = status.diagnostics.length - shown.length;
     console.log(
-      `${status.ok ? "ok" : "FAILED"}: ${status.root} ${status.cached ? "same sources as an earlier build, reused its PDF (--force compiles)" : `in ${((status.durationMs ?? 0) / 1000).toFixed(1)}s`} — ${count("error")} errors, ${count("warning")} warnings${hidden ? `, ${hidden} info (--all)` : ""}${status.ok ? "" : "; the viewer keeps the last good PDF"}`,
+      `${status.ok ? "ok" : status.partial ? "PARTIAL" : "FAILED"}: ${status.root} ${status.cached ? "same sources as an earlier build, reused its PDF (--force compiles)" : `in ${((status.durationMs ?? 0) / 1000).toFixed(1)}s`} — ${count("error")} errors, ${count("warning")} warnings${hidden ? `, ${hidden} info (--all)` : ""}${status.ok ? "" : `; ${failedPdf(status)}`}`,
     );
   }
   return statuses.every((s) => s.ok) ? 0 : 1;

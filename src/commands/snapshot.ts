@@ -48,14 +48,19 @@ export async function snapshot(o: SnapshotOptions): Promise<number> {
     throw e instanceof RangeError ? new UsageError(e.message) : e;
   }
   writeFileSync(out, png);
-  if (lastBuildFailed(paths(cfg).status, doc.name)) console.error("warning: the last build failed; this is the last good PDF");
+  const last = lastBuild(paths(cfg).status, doc.name);
+  if (last === "partial") console.error("warning: the last build had errors; this is a partial PDF built past them");
+  else if (last === "failed") console.error("warning: the last build failed; this is the last good PDF");
   console.log(out);
   return 0;
 }
 
-function lastBuildFailed(statusFile: string, name: string): boolean {
-  if (!existsSync(statusFile)) return false;
+/** How the document's last build ended, from build/status.json: failed (last good PDF), partial, or otherwise. */
+function lastBuild(statusFile: string, name: string): "failed" | "partial" | null {
+  if (!existsSync(statusFile)) return null;
   const v: unknown = JSON.parse(readFileSync(statusFile, "utf8"));
-  if (!v || typeof v !== "object" || !("docs" in v) || !Array.isArray(v.docs)) return false;
-  return v.docs.some((s: unknown) => Boolean(s && typeof s === "object" && "doc" in s && s.doc === name && "ok" in s && s.ok === false));
+  if (!v || typeof v !== "object" || !("docs" in v) || !Array.isArray(v.docs)) return null;
+  const s: unknown = v.docs.find((d: unknown) => Boolean(d && typeof d === "object" && "doc" in d && d.doc === name));
+  if (!s || typeof s !== "object" || !("ok" in s) || s.ok !== false) return null;
+  return "partial" in s && s.partial === true ? "partial" : "failed";
 }

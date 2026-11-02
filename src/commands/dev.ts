@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { join, relative } from "node:path";
-import { Builder, type Status } from "../builder.ts";
+import { Builder, failedPdf, type Status } from "../builder.ts";
 import { loadConfig } from "../config.ts";
 import { projectHooks } from "../hooks.ts";
 import { buildDiff } from "../latexdiff.ts";
@@ -210,6 +210,6 @@ function report(s: Status): void {
     console.log(`[${t}] ${s.doc} reused an earlier build of these sources, ${warnings.length} warnings (rev ${s.rev})`);
     return;
   }
-  console.log(s.ok ? ` ok ${secs}s, ${warnings.length} warnings (rev ${s.rev})` : ` FAILED ${secs}s, ${errors.length} errors — viewer keeps the last good PDF`);
+  console.log(s.ok ? ` ok ${secs}s, ${warnings.length} warnings (rev ${s.rev})` : ` ${s.partial ? "PARTIAL" : "FAILED"} ${secs}s, ${errors.length} errors — ${failedPdf(s)}`);
   for (const d of [...errors, ...warnings].slice(0, 8)) console.log(`  ${formatDiagnostic(d)}`);
 }

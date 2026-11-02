@@ -18,6 +18,10 @@ export interface Status {
   state: "idle" | "building";
   /** Result of the last finished build; null before the first. */
   ok: boolean | null;
+  /** The last build failed but its PDF was published anyway, built past the errors (Config.partial). */
+  partial?: boolean;
+  /** Missing files a partial PDF shows as placeholders, as the sources name them. */
+  placeholders?: string[];
   durationMs?: number;
   finishedAt?: string;
   /** The PDF came from the build cache (its sources match an earlier build) instead of a compile. */
@@ -223,6 +227,8 @@ export class Builder extends EventEmitter<{ status: [Status] }> {
     this.#update(s, {
       state: "idle",
       ok: true,
+      partial: false,
+      placeholders: undefined,
       cached: true,
       note: undefined,
       rev: fresh || s.status.rev === 0 ? s.status.rev + 1 : s.status.rev,
@@ -243,21 +249,31 @@ export class Builder extends EventEmitter<{ status: [Status] }> {
     const note = cold ? "first build: downloading the TeX packages (1–2 minutes, once)" : undefined;
     this.#update(s, { build: s.status.build + 1, state: "building", note });
     let ok = false;
+    let partial = false;
+    let placeholders: string[] | undefined;
     let diagnostics: Diagnostic[];
     try {
       const result = await compile(this.cfg, s.doc);
       ok = result.ok;
+      partial = result.partial;
+      placeholders = result.placeholders;
       diagnostics = result.diagnostics;
-      if (result.ok) {
+      if (result.ok || result.partial) {
         await publish(result.pdf, p.pdf);
         if (existsSync(result.synctex)) await publish(result.synctex, p.synctex);
         s.deps = result.deps ? new Set(result.deps) : null;
-        // Kept for reuse when the sources come back to this state; a cache failure never fails the build.
+      }
+      if (result.ok) {
+        // Kept for reuse when the sources come back to this state; a cache failure never fails the build. A
+        // partial PDF is not kept: its sources are the ones that failed.
         const entry = result.deps
           ? await store(this.cfg, s.doc, { deps: result.deps, started, diagnostics, durationMs: Date.now() - started }).catch(() => null)
           : null;
         s.current = entry?.key ?? null;
         await setCurrent(this.cfg, s.doc, s.current).catch(() => {});
+      } else if (result.partial) {
+        s.current = null;
+        await setCurrent(this.cfg, s.doc, null).catch(() => {});
       }
       if (existsSync(result.log)) await publish(result.log, p.log);
     } catch (e) {
@@ -266,9 +282,11 @@ export class Builder extends EventEmitter<{ status: [Status] }> {
     this.#update(s, {
       state: "idle",
       ok,
+      partial,
+      placeholders,
       cached: false,
       note: undefined,
-      rev: ok ? s.status.rev + 1 : s.status.rev,
+      rev: ok || partial ? s.status.rev + 1 : s.status.rev,
       durationMs: Date.now() - started,
       finishedAt: new Date().toISOString(),
       diagnostics,
@@ -282,6 +300,13 @@ export class Builder extends EventEmitter<{ status: [Status] }> {
     this.#writes = this.#writes.then(() => writeAtomic(paths(this.cfg).status, json)).catch(() => {});
     this.emit("status", s.status);
   }
+}
+
+/** What a failed build left on screen, for messages: a partial PDF (with its placeholders) or the last good one. */
+export function failedPdf(s: Pick<Status, "partial" | "placeholders">): string {
+  if (!s.partial) return "the viewer keeps the last good PDF";
+  const shown = s.placeholders?.length ? `; ${s.placeholders.join(", ")} shown as placeholders` : "";
+  return `the viewer shows a partial PDF built past the errors${shown}`;
 }
 
 async function publish(src: string, dest: string): Promise<void> {

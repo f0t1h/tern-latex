@@ -143,9 +143,12 @@ Keys are written for macOS. On Windows and Linux, ⌘ is Ctrl and ⌥ is Alt: �
 
 ### Viewer
 
-- Every save rebuilds. A failed build keeps the last good PDF and shows the errors in a banner. Click a
-  diagnostic to open its file at that line, or **Fix** to hand it to omp. **Fix all with omp** sends the
-  whole list.
+- Every save rebuilds. When a build fails (a co-author's figure or section not pushed yet, a package not
+  added, a typo in a macro), ternlatex builds it again past the errors and shows that **partial PDF**:
+  missing figures and `\input` files appear as labelled placeholder boxes, and the toolbar says
+  **⚠ Built with errors**. The banner lists the errors; click one to open its file at that line, or
+  **Fix** to hand it to omp (**Fix all with omp** sends the whole list). When even that fails, the
+  viewer keeps the last good PDF. Set `partial = false` to always keep the last good PDF instead.
 - **⌘-click** on the PDF jumps to the source line (SyncTeX).
 - Zoom with ⌘+, ⌘− and ⌘0, or with the toolbar. `#page=N` in the URL opens a page.
 - **Search** with **⌘F**, `/` or **⌕**. It searches the typeset text and the LaTeX source at once and
@@ -447,6 +450,7 @@ bundle = "https://data1b.fullyjustified.net/tlextras-2022.0r0.tar"
 # port = 4820            # default: a fixed port per project
 # ignore = ["data/raw"]  # paths the watcher ignores
 checkpoints = true      # checkpoint every save (see "History")
+partial = true          # on a failed build, show a PDF built past the errors (missing files as placeholders)
 
 [tools]                  # executables to use instead of PATH or the download
 # tectonic = "/opt/tectonic/bin/tectonic"

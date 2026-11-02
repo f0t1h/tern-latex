@@ -37,6 +37,11 @@ export interface Config {
   tools: Record<string, string>;
   /** Snapshot the working tree onto refs/ternlatex/checkpoints at every build (i.e. every save). */
   checkpoints: boolean;
+  /**
+   * When a build fails, build again past the errors (missing images and \input files drawn as placeholders) and
+   * show that PDF, marked partial, instead of the last good one.
+   */
+  partial: boolean;
 }
 
 export interface ZoteroConfig {
@@ -96,6 +101,7 @@ export function loadConfig(start = process.cwd()): Config {
     rewrite: rewriteConfig(raw.rewrite),
     tools: Object.fromEntries(Object.entries(table(raw.tools)).flatMap(([k, v]) => (typeof v === "string" && v ? [[k, v]] : []))),
     checkpoints: raw.checkpoints !== false,
+    partial: raw.partial !== false,
   };
   for (const d of cfg.docs) if (!existsSync(join(dir, d.root))) throw new UsageError(`${CONFIG_FILE}: root file ${d.root} (document "${d.name}") does not exist`);
   return cfg;
