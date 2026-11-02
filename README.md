@@ -153,13 +153,14 @@ Keys are written for macOS. On Windows and Linux, ⌘ is Ctrl and ⌥ is Alt: �
   little apart or in another order. A typo in your query finds the word when the document doesn't have
   what you typed; when it does, other words count only as its likely misspellings in the document (a
   single "fsat" where the text says "fast", marked **possible typo**; never "last"). Likely slips cost
-  least: a neighbouring key, a missed or extra letter, two letters swapped. In the source it reads only
-  the prose: section titles, captions, table cells, footnotes, macro arguments and citation keys, never
-  the preamble, comments, math, labels, package options or file names. Text only in the source (a
-  citation key, say) is marked on the lines SyncTeX gives for it. Enter and ⇧Enter go to the next and
-  previous place, **⌘Enter**
-  opens the source, and the list shows each place with its page and `file:line`. Results follow
-  rebuilds.
+  least: a neighbouring key, a missed or extra letter, two letters swapped. In the source it reads the
+  prose (section titles, captions, table cells, footnotes, macro arguments, citation keys) and the math,
+  never the preamble, comments, labels, package options or file names. Math matches by command and by
+  symbol: `\sum`, `∑` and the word "sum" all find the typeset ∑, `\le` finds ≤, `\Gamma` finds Γ, and
+  `\frac` (no glyph of its own) finds where fractions are written. A query word with a backslash only
+  matches math. Text only in the source (a citation key, `\frac`) is marked on the lines SyncTeX gives
+  for it. Enter and ⇧Enter go to the next and previous place, **⌘Enter** opens the source, and the list
+  shows each place with its page and `file:line`. Results follow rebuilds.
 - Toolbar: **↻** rebuilds now; **⤓** opens the PDF in your PDF app (to save, print or share).
 - **Select text** in the PDF (drag, or double-click a word) to get an action bar:
   - **Source** opens the editor at that passage.

@@ -3,7 +3,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { type Config, type DocConfig, docPaths, loadConfig } from "../src/config.ts";
-import { findMatches, fold, proseOf, queryTerms, SearchIndex, type SearchHit, termRules, typoCost } from "../src/search.ts";
+import { findMatches, fold, proseOf, queryTerms, SearchIndex, type SearchHit, termRules, tokenKey, typoCost } from "../src/search.ts";
 import { SyncTex } from "../src/synctex.ts";
 
 const FIXTURE = join(import.meta.dir, "fixtures", "search");
@@ -11,9 +11,14 @@ const FIXTURE = join(import.meta.dir, "fixtures", "search");
 describe("proseOf", () => {
   const prose = (tex: string) => proseOf(tex).text.trim();
 
-  test("skips the preamble, comments, math, \\iffalse blocks and what follows \\end{document}", () => {
-    const tex = "\\documentclass{article}\n\\usepackage{geometry}\n\\title{Preamble}\n\\begin{document}\nOne % hidden\ntwo $x^2 + y$ three \\[ z \\] four\n\\begin{align}a&=b\\end{align}\n\\iffalse draft \\fi five\n\\end{document}\nafter";
-    expect(prose(tex)).toBe("One two three four five");
+  test("skips the preamble, comments, \\iffalse blocks and what follows \\end{document}", () => {
+    const tex = "\\documentclass{article}\n\\usepackage{geometry}\n\\title{Preamble}\n\\begin{document}\nOne % hidden\ntwo\n\\iffalse draft \\fi three\n\\end{document}\nafter";
+    expect(prose(tex)).toBe("One two three");
+  });
+
+  test("reads math as commands, single letters, numbers and \\text words, without labels or sizing", () => {
+    const tex = "Let $\\alpha \\le \\sum_{i=10}^{n} x_iy$ hold \\[ \\left( \\frac{a}{b} \\right) \\] and\n\\begin{align}\\mathrm{energy} &= \\text{for all } z \\label{eq:e}\\end{align}";
+    expect(prose(tex)).toBe("Let \\alpha \\le \\sum i 10 n x i y hold \\frac a b and energy for all z");
   });
 
   test("keeps formatted and accented words whole, splits consecutive arguments", () => {
@@ -36,6 +41,17 @@ describe("proseOf", () => {
     const w = text.indexOf("world");
     expect(tex.slice(at[w], at[w] + 5)).toBe("world");
     expect(tex[at[text.indexOf("Hello")]]).toBe("H");
+  });
+});
+
+describe("tokenKey", () => {
+  test("a math command, its symbol and its aliases are one key; words fold", () => {
+    expect(["\\sum", "∑"].map(tokenKey)).toEqual(["\\sum", "\\sum"]);
+    expect(["\\le", "\\leq", "≤"].map(tokenKey)).toEqual(["\\leq", "\\leq", "\\leq"]);
+    expect(["\\Gamma", "Γ", "\\gamma", "𝛾"].map(tokenKey)).toEqual(["\\gamma", "\\gamma", "\\gamma", "\\gamma"]);
+    expect(["\\varepsilon", "ϵ"].map(tokenKey)).toEqual(["\\epsilon", "\\epsilon"]);
+    expect(tokenKey("Naïve")).toBe("naive");
+    expect(queryTerms("x_i ≠ \\alpha")).toEqual(["x", "i", "\\neq", "\\alpha"]);
   });
 });
 
@@ -170,17 +186,35 @@ describe("SearchIndex on a built document", () => {
     expect(hit.box?.page).toBe(1);
   });
 
-  test("comments, the preamble, math source and reference keys are not searched", async () => {
+  test("comments, the preamble and reference keys are not searched", async () => {
     expect(await search("zebras")).toEqual([]);
     expect(await search("geometry")).toEqual([]);
-    // "energy" is typeset in the equation and the prose; the source's \label/\ref{eq:energy} add nothing.
-    expect((await search("energy")).map((h) => h.in)).toEqual(["pdf", "both"]);
+    // "energy" is typeset (and written, \mathrm{energy}) in the equation and the prose; \label/\ref{eq:energy} add nothing.
+    expect((await search("energy")).map((h) => [h.in, h.source?.line])).toEqual([["both", 17], ["both", 19]]);
   });
 
   test("typos still find the place, below an exact match's score", async () => {
     const [hit] = await search("mountain gorilas");
     expect(hit).toMatchObject({ page: 2, match: "mountain gorillas" });
     expect(hit.score).toBeLessThan(1);
+  });
+
+  test("\\sum and ∑ find the typeset summation signs, inline and displayed; the word sum finds them too", async () => {
+    const signs = [["both", 2, 27, "∑"], ["both", 2, 29, "∑"]];
+    const places = (hits: SearchHit[]) => hits.map((h) => [h.in, h.page, h.source?.line, h.match]);
+    expect(places(await search("\\sum"))).toEqual(signs);
+    expect(places(await search("∑"))).toEqual(signs);
+    const word = await search("sum");
+    expect(places(word)).toEqual([signs[0], ["both", 2, 27, "sum"], signs[1]]);
+    expect(word[1].score).toBeGreaterThan(word[0].score);
+    expect(places(await search("\\le"))).toEqual([["both", 2, 27, "≤"]]);
+    expect(places(await search("\\Gamma \\neq"))).toHaveLength(1);
+  });
+
+  test("a command with no glyph of its own (\\frac) is found in the source and placed by SyncTeX", async () => {
+    const [hit] = await search("\\frac");
+    expect(hit).toMatchObject({ in: "source", page: 2, source: { file: "main.tex", line: 29 }, match: "\\frac" });
+    expect(hit.box?.page).toBe(2);
   });
 
   test("a query of no words finds nothing", async () => {

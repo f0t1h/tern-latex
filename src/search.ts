@@ -63,11 +63,73 @@ export function fold(word: string): string {
     .replace(/['’]/g, "");
 }
 
-const WORD = /[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu;
+/** Greek letters by their (folded, NFKD) character: the names of their LaTeX commands. */
+const GREEK: Record<string, string> = {
+  α: "alpha", β: "beta", γ: "gamma", δ: "delta", ε: "epsilon", ζ: "zeta", η: "eta", θ: "theta", ι: "iota", κ: "kappa",
+  λ: "lambda", μ: "mu", ν: "nu", ξ: "xi", ο: "omicron", π: "pi", ρ: "rho", σ: "sigma", ς: "sigma", τ: "tau",
+  υ: "upsilon", φ: "phi", ϕ: "phi", χ: "chi", ψ: "psi", ω: "omega", ϑ: "theta", ϖ: "pi", ϱ: "rho",
+};
 
-/** The query's words, folded. */
+/** Math symbols as typeset (pdf.js gives their Unicode characters) and the LaTeX command each comes from. */
+const MATH_SYMBOLS: Record<string, string> = {
+  "∑": "sum", "∏": "prod", "∐": "coprod", "∫": "int", "∬": "iint", "∭": "iiint", "∮": "oint", "√": "sqrt",
+  "∞": "infty", "∂": "partial", "∇": "nabla", "±": "pm", "∓": "mp", "×": "times", "÷": "div", "·": "cdot", "⋅": "cdot",
+  "∘": "circ", "∗": "ast", "⋆": "star", "⊕": "oplus", "⊗": "otimes", "≤": "leq", "≥": "geq", "≠": "neq", "\u0338": "neq",
+  "≈": "approx", "≡": "equiv", "∼": "sim", "≃": "simeq", "≅": "cong", "∝": "propto", "≪": "ll", "≫": "gg",
+  "∈": "in", "∉": "notin", "∋": "ni", "⊂": "subset", "⊃": "supset", "⊆": "subseteq", "⊇": "supseteq", "∪": "cup",
+  "∩": "cap", "⋃": "bigcup", "⋂": "bigcap", "∧": "wedge", "∨": "vee", "¬": "neg", "∀": "forall", "∃": "exists",
+  "∅": "emptyset", "→": "rightarrow", "←": "leftarrow", "↔": "leftrightarrow", "⇒": "rightarrow", "⇐": "leftarrow",
+  "⇔": "leftrightarrow", "↦": "mapsto", "⋯": "cdots", "…": "ldots", "ℓ": "ell", "ℏ": "hbar", "⊥": "perp",
+  "∥": "parallel", "∠": "angle", "⟨": "langle", "⟩": "rangle", "†": "dagger",
+};
+
+/** Other names of the same symbols (folded case: \Rightarrow and \rightarrow are one key). */
+const MATH_ALIASES: Record<string, string> = {
+  le: "leq", ge: "geq", ne: "neq", to: "rightarrow", gets: "leftarrow", implies: "rightarrow", impliedby: "leftarrow",
+  iff: "leftrightarrow", longrightarrow: "rightarrow", longleftarrow: "leftarrow", longleftrightarrow: "leftrightarrow",
+  varepsilon: "epsilon", varphi: "phi", vartheta: "theta", varrho: "rho", varsigma: "sigma", varpi: "pi",
+  land: "wedge", lor: "vee", lnot: "neg", varnothing: "emptyset", dots: "ldots", dotsc: "ldots", dotsb: "cdots",
+  bigoplus: "oplus", bigotimes: "otimes", bigwedge: "wedge", bigvee: "vee", lvert: "mid", rvert: "mid",
+};
+
+/** Math operators typeset as upright words: `\log` is the word "log" in the PDF. */
+const OPERATORS = new Set([
+  "log", "ln", "lg", "exp", "sin", "cos", "tan", "cot", "sec", "csc", "arcsin", "arccos", "arctan", "sinh", "cosh",
+  "tanh", "coth", "max", "min", "sup", "inf", "lim", "liminf", "limsup", "det", "dim", "ker", "arg", "deg", "gcd",
+  "hom", "pr", "mod", "bmod", "pmod",
+]);
+
+/** The key of a LaTeX math command NAME (without its backslash): `\le` and `≤` are both `\leq`; `\log` is "log". */
+function mathKey(name: string): string {
+  const lower = name.toLowerCase();
+  if (OPERATORS.has(lower)) return lower;
+  return `\\${MATH_ALIASES[lower] ?? lower}`;
+}
+
+const SYMBOL_CHARS = Object.keys(MATH_SYMBOLS).join("");
+const GREEK_CHARS = "\\u0370-\\u03FF\\u{1D6A8}-\\u{1D7CB}";
+/**
+ * What search compares: a math command (`\sum`, in the query and the source's math), a math symbol or Greek
+ * letter (one character each), or a word (letters and digits; Greek letters stand alone, as in math).
+ */
+const TOKEN = new RegExp(
+  `\\\\[A-Za-z]+|[${SYMBOL_CHARS}${GREEK_CHARS}]|(?:(?![${GREEK_CHARS}])[\\p{L}\\p{N}])+(?:['’](?:(?![${GREEK_CHARS}])[\\p{L}\\p{N}])+)*`,
+  "gu",
+);
+
+/** A token's key: math commands, symbols and Greek letters as `\name`, words folded. */
+export function tokenKey(token: string): string {
+  if (token.startsWith("\\")) return mathKey(token.slice(1));
+  const symbol = MATH_SYMBOLS[token];
+  if (symbol) return `\\${symbol}`;
+  const base = fold(token);
+  const greek = GREEK[base];
+  return greek ? `\\${greek}` : base;
+}
+
+/** The query's tokens as keys: `\sum` and `∑` are one, `\Gamma` and `Γ` too. */
 export function queryTerms(query: string): string[] {
-  return [...query.matchAll(WORD)].map((m) => fold(m[0]));
+  return [...query.matchAll(TOKEN)].map((m) => tokenKey(m[0]));
 }
 
 /** Rows of a QWERTY keyboard (also the letter positions of QWERTY-based layouts such as Turkish Q), staggered. */
@@ -141,8 +203,19 @@ export function typoCost(typed: string, word: string, max: number): number {
 /** Scores from here up are the query word itself or its start: a document that has them gets no typo matches. */
 const STRONG = 0.8;
 
-/** How well query TERM matches document word KEY (both folded); LAST terms may be typed partly. */
+/**
+ * How well query TERM matches document word KEY (both keys); LAST terms may be typed partly. A `\name` term
+ * matches only math (`\sum` never finds the word "sum"); a plain term also finds math by its name, a little
+ * below the word itself ("sum" finds ∑).
+ */
 function termScore(term: string, key: string, last: boolean): number {
+  const termMath = term.startsWith("\\");
+  const keyMath = key.startsWith("\\");
+  if (termMath || keyMath) {
+    if (termMath && !keyMath) return 0;
+    const s = termScore(termMath ? term.slice(1) : term, key.slice(1), last);
+    return termMath ? s : s * 0.95;
+  }
   if (key === term) return 1;
   if (term.length >= 2 && key.startsWith(term)) return last ? 0.9 : STRONG;
   if (term.length >= 3 && key.includes(term)) return 0.65;
@@ -333,6 +406,7 @@ function pageWords(items: unknown[], page: number, left: number, top: number, wi
   const glyphs: (PdfBox | null)[] = [];
   let lastY: number | null = null;
   let lastEnd = 0;
+  let lastSize = 0;
   let pending: "none" | "space" | "line" = "none";
   for (const raw of items) {
     const it = textItem(raw);
@@ -349,6 +423,8 @@ function pageWords(items: unknown[], page: number, left: number, top: number, wi
     if (lastY !== null) {
       if (Math.abs(baseline - lastY) > size * 0.5) pending = "line";
       else if (pending === "none" && x - lastEnd > size * 0.2) pending = "space";
+      // A sub- or superscript (smaller type) is a token of its own: log₂ is "log" and "2", x_i is "x" and "i".
+      else if (pending === "none" && Math.abs(size - lastSize) > 0.15 * Math.max(size, lastSize)) pending = "space";
     }
     if (pending === "line" && /\p{L}-$/u.test(text) && /^\p{Ll}/u.test(str)) {
       text = text.slice(0, -1); // hyphenated at the line's end: one word
@@ -370,9 +446,10 @@ function pageWords(items: unknown[], page: number, left: number, top: number, wi
     }
     lastY = baseline;
     lastEnd = x + it.width;
+    lastSize = size;
   }
   const words: PdfWord[] = [];
-  for (const m of text.matchAll(WORD)) {
+  for (const m of text.matchAll(TOKEN)) {
     const start = m.index;
     const end = start + m[0].length;
     const boxes: PdfBox[] = [];
@@ -388,7 +465,7 @@ function pageWords(items: unknown[], page: number, left: number, top: number, wi
         last.height = Math.max(last.height, g.height);
       } else boxes.push({ ...g });
     }
-    if (boxes.length) words.push({ key: fold(m[0]), page, start, end, boxes });
+    if (boxes.length) words.push({ key: tokenKey(m[0]), page, start, end, boxes });
   }
   return { text, words };
 }
@@ -455,11 +532,33 @@ const ENV_ARGS: Record<string, number> = {
   wrapfigure: 2, wraptable: 2, subfigure: 1, thebibliography: 1,
 };
 
-/** Environments with no prose: math, drawings, code. */
-const SKIP_ENVS = new Set([
+/** Math environments: their content is read as math (math commands, letters, numbers, `\text` words). */
+const MATH_ENVS = new Set([
   "equation", "equation*", "align", "align*", "alignat", "alignat*", "flalign", "flalign*", "gather", "gather*",
-  "multline", "multline*", "eqnarray", "eqnarray*", "displaymath", "math", "split",
+  "multline", "multline*", "eqnarray", "eqnarray*", "displaymath", "math",
+]);
+
+/** Environments with no prose: drawings, code. */
+const SKIP_ENVS = new Set([
   "tikzpicture", "pgfpicture", "forest", "axis", "verbatim", "verbatim*", "Verbatim", "lstlisting", "minted", "comment", "filecontents", "filecontents*",
+]);
+
+/** Math commands whose argument is words or letters: `\text{for all}`, `\mathrm{energy}`, `\mathbb{R}`. */
+const MATH_TEXT = new Set([
+  "text", "textrm", "textit", "textbf", "textsf", "texttt", "textnormal", "mbox", "intertext", "shortintertext", "emph",
+  "mathrm", "mathit", "mathbf", "mathsf", "mathtt", "mathcal", "mathbb", "mathfrak", "mathscr", "mathnormal",
+  "operatorname", "boldsymbol", "bm",
+]);
+/** Math commands with arguments that are not math: how many to skip. */
+const MATH_SKIP: Record<string, number> = {
+  label: 1, tag: 1, ref: 1, eqref: 1, cref: 1, Cref: 1, hspace: 1, vspace: 1, phantom: 1, hphantom: 1, vphantom: 1,
+  color: 1, textcolor: 1, colorbox: 1, end: 1,
+};
+/** Math commands that only size, space or style what follows. */
+const MATH_QUIET = new Set([
+  "left", "right", "middle", "big", "Big", "bigg", "Bigg", "bigl", "bigr", "Bigl", "Bigr", "biggl", "biggr", "Biggl",
+  "Biggr", "bigm", "Bigm", "displaystyle", "textstyle", "scriptstyle", "scriptscriptstyle", "limits", "nolimits",
+  "nonumber", "notag", "quad", "qquad", "enspace", "thinspace", "mathstrut", "strut", "allowbreak", "nobreak", "relax",
 ]);
 
 /** Control words that are letters: \i → i, \ss → ss. */
@@ -504,21 +603,22 @@ function skipArgs(src: string, i: number, count: number): number {
   }
 }
 
-/** End of math opened at I by OPENER, past its closer. */
-function mathEnd(src: string, i: number, opener: string): number {
+/** Math opened at I by OPENER: where its content ends (before the closer) and where the closer ends. */
+function mathEnd(src: string, i: number, opener: string): { inner: number; end: number } {
   const closer = opener === "$$" ? "$$" : opener === "$" ? "$" : opener === "\\(" ? "\\)" : "\\]";
   for (let k = i + opener.length; k < src.length; k++) {
-    if (src.startsWith(closer, k)) return k + closer.length;
+    if (src.startsWith(closer, k)) return { inner: k, end: k + closer.length };
     if (src[k] === "\\") k++;
   }
-  return src.length;
+  return { inner: src.length, end: src.length };
 }
 
 /**
- * The prose of a LaTeX source: what search matches there. Preamble, comments, math, verbatim and code, and the
+ * The prose of a LaTeX source: what search matches there. Preamble, comments, verbatim and code, and the
  * arguments of package, file, length, colour and definition commands are left out; command names are word
- * breaks, braces and accents are not (`\textbf{fo}o` is "foo", `caf\'e` is "cafe"). `at[k]` is the source
- * offset of the prose's character k.
+ * breaks, braces and accents are not (`\textbf{fo}o` is "foo", `caf\'e` is "cafe"). Math is kept as math
+ * commands (`\sum`), single letters, numbers and `\text`/`\mathrm` words, without labels and sizing. `at[k]`
+ * is the source offset of the prose's character k.
  */
 export function proseOf(source: string): { text: string; at: number[] } {
   const src = maskSource(source);
@@ -531,6 +631,61 @@ export function proseOf(source: string): { text: string; at: number[] } {
   const space = (i: number) => {
     if (text && !text.endsWith(" ")) push(" ", i);
   };
+  /** Math from FROM to TO: each command, letter, number and symbol a token of its own. */
+  const math = (from: number, to: number) => {
+    space(from);
+    let k = from;
+    while (k < to) {
+      const c = src[k];
+      if (c === "\\") {
+        const name = /^\\([A-Za-z]+|.?)/.exec(src.slice(k, k + 40))?.[1] ?? "";
+        const after = k + 1 + name.length;
+        space(k);
+        if (!/^[A-Za-z]/.test(name) || MATH_QUIET.has(name)) k = after;
+        else if (MATH_TEXT.has(name)) {
+          const open = skipSpaces(src, after);
+          if (src[open] !== "{") k = after;
+          else {
+            // The argument's words, as written: `\mathrm{energy}` is the word energy.
+            const close = groupEnd(src, open);
+            for (let w = open + 1; w < close - 1; w++) {
+              if (/[\p{L}\p{N}]/u.test(src[w])) push(src[w], w);
+              else if (/\s/.test(src[w])) space(w);
+            }
+            space(close);
+            k = close;
+          }
+        } else if (name === "begin") {
+          // Inner environments (aligned, cases, pmatrix, array{cc}) add nothing but their column spec.
+          const env = /^\{([^}]*)\}/.exec(src.slice(after, after + 64));
+          k = skipArgs(src, after + (env ? env[0].length : 0), ENV_ARGS[env?.[1] ?? ""] ?? 0);
+        } else if (Object.hasOwn(MATH_SKIP, name)) k = skipArgs(src, after, MATH_SKIP[name]);
+        else {
+          push(`\\${name}`, k);
+          space(after);
+          k = after;
+        }
+      } else if (/\p{N}/u.test(c)) {
+        // A number is one token: 10, 0.5.
+        let e = k + 1;
+        while (e < to && /[\p{N}.]/u.test(src[e])) e++;
+        space(k);
+        push(src.slice(k, e), k);
+        space(e);
+        k = e;
+      } else if (/\p{L}/u.test(c) || Object.hasOwn(MATH_SYMBOLS, c)) {
+        // Letters are separate variables: xy is x times y.
+        space(k);
+        push(c, k);
+        space(k + 1);
+        k++;
+      } else {
+        if (c !== "{" && c !== "}") space(k);
+        k++;
+      }
+    }
+    space(to);
+  };
   const body = src.indexOf("\\begin{document}");
   let i = body >= 0 ? body + "\\begin{document}".length : 0;
   const stop = src.indexOf("\\end{document}", i);
@@ -541,8 +696,9 @@ export function proseOf(source: string): { text: string; at: number[] } {
       const name = /^\\([A-Za-z@]+\*?|.?)/.exec(src.slice(i, i + 64))?.[1] ?? "";
       const after = i + 1 + name.length;
       if (name === "(" || name === "[") {
-        space(i);
-        i = mathEnd(src, i, `\\${name}`);
+        const m = mathEnd(src, i, `\\${name}`);
+        math(i + 2, m.inner);
+        i = m.end;
         continue;
       }
       if (!/^[A-Za-z@]/.test(name)) {
@@ -564,8 +720,10 @@ export function proseOf(source: string): { text: string; at: number[] } {
         const envName = env?.[1] ?? "";
         let next = after + (env ? env[0].length : 0);
         space(i);
-        if (bare === "begin" && SKIP_ENVS.has(envName)) {
+        if (bare === "begin" && (SKIP_ENVS.has(envName) || MATH_ENVS.has(envName))) {
           const close = src.indexOf(`\\end{${envName}}`, next);
+          const inner = close < 0 ? end : close;
+          if (MATH_ENVS.has(envName)) math(next, inner);
           next = close < 0 ? end : close + `\\end{${envName}}`.length;
         } else if (bare === "begin") next = skipArgs(src, next, ENV_ARGS[envName] ?? 0);
         i = next;
@@ -604,8 +762,10 @@ export function proseOf(source: string): { text: string; at: number[] } {
       continue;
     }
     if (c === "$") {
-      space(i);
-      i = mathEnd(src, i, src[i + 1] === "$" ? "$$" : "$");
+      const opener = src[i + 1] === "$" ? "$$" : "$";
+      const m = mathEnd(src, i, opener);
+      math(i + opener.length, m.inner);
+      i = m.end;
       continue;
     }
     if (c === "}") {
@@ -656,7 +816,7 @@ function sourceText(file: string, source: string): SourceText {
     }
     return lo + 1;
   };
-  const words = [...text.matchAll(WORD)].map((m) => ({ key: fold(m[0]), start: m.index, end: m.index + m[0].length, line: lineOf(at[m.index]) }));
+  const words = [...text.matchAll(TOKEN)].map((m) => ({ key: tokenKey(m[0]), start: m.index, end: m.index + m[0].length, line: lineOf(at[m.index]) }));
   return { file, prose: text, words };
 }
 
