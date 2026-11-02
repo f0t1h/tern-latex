@@ -57,7 +57,7 @@ Rules:
 
 ## Insert
 
-Add `\input{tables/<name>}` at the requested spot, on its own line, and reference it from the prose with `\cref{tab:<name>}` if the text does not already.
+Add `\input{tables/<name>}` at the requested spot, on its own line, and reference it from the prose if the text does not already, in the project's style: `\cref{tab:<name>}` when it loads cleveref, else what its other references use (`\autoref{tab:<name>}`, `Table~\ref{tab:<name>}`).
 
 ## Verify
 

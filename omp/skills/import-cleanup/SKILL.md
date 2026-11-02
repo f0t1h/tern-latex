@@ -37,7 +37,7 @@ Bare `\includegraphics` lines become `figure` floats with `\centering`, a `\capt
 
 - Quotes: straight or Unicode quotes to ``` ``..'' ``` / `` `..' `` (or `\enquote` if csquotes is loaded), consistently.
 - Dashes: ranges `--`, em dashes `---` (or the document's spaced en-dash convention); minus signs in math.
-- Manual references ("see Table 3", "Figure 2 below") become `\cref{...}`.
+- Manual references ("see Table 3", "Figure 2 below") become `\label`/reference pairs in the project's style: `\cref{...}` when it loads cleveref, else `\autoref{...}` with hyperref, else `Table~\ref{...}`.
 - Numbers with units become `\SI{..}{..}`.
 - Remove manual spacing (`\\` paragraph breaks, `\vspace`, `\newline` runs) that came from Word layout.
 

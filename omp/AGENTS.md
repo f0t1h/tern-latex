@@ -55,7 +55,7 @@ A failed build still shows a PDF when it can: `latex_build` then says PARTIAL, t
 - When the project uses a publisher or venue class (IEEEtran, acmart, llncs, elsarticle, revtex, a NeurIPS/ICML/ICLR/ACL style, a university thesis class), the class owns the layout: do not restyle it, do not load `style/ternlatex.sty` on top of it, and keep the options the venue requires.
 - Use semantic macros over hard-coded spacing: no `\vspace`, `\\[..]`, `\hspace` or manual font switches to fix layout.
 - Tables go in `tables/<name>.tex`, figures in `figures/`; `\input` them where they appear.
-- Cross-reference with `\cref`/`\Cref` (cleveref). Typeset numbers and units with siunitx (`\num`, `\SI`, `S` columns). Rule tables with booktabs; never use vertical rules or `\hline`.
+- Cross-reference in the style the project already uses: `\cref`/`\Cref` where it loads cleveref (new ternlatex projects do), else what its sources use (`\autoref`, `Table~\ref{…}`). Never add a `\cref` to a project that doesn't load cleveref, and don't convert existing references to another style unless asked. Typeset numbers and units with siunitx (`\num`, `\SI`, `S` columns). Rule tables with booktabs; never use vertical rules or `\hline`.
 - During prose edits never alter math meaning, citation keys, `\label` names or `\ref`/`\cref` targets.
 - Treat overfull/underfull box warnings as formatting work: fix them at the source (rewording, `tabularx`, line breaks in tables), not by hiding them.
 - Cite only keys from `ternlatex refs search` or the existing .bib; never invent keys or hand-write entries for works in Zotero.
