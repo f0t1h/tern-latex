@@ -373,7 +373,12 @@ describe("blocks: ternlatex creates them with the tern CLI, the plugin finds and
     setState({ reply: { ok: true } });
     await openSource(1, "/p/a.tex", 3);
     expect(opens()).toEqual([{ from: "1", argv: ["--tab", "/p/a.tex:3"] }]);
-    expect(requests().map((r) => r.args)).toEqual([{ devPane: 1, path: "/p/a.tex" }]);
+    expect(requests().map((r) => r.args)).toEqual([{ devPane: 1, path: "/p/a.tex", line: 3 }]);
+
+    // The plugin showed it in the project's editor block itself: nothing for the CLI to open.
+    setState({ reply: { ok: true, opened: true } });
+    await openSource(1, "/p/b.tex", 9);
+    expect(existsSync(join(fake, "opens"))).toBe(false);
   });
 
   test("popout opens the viewer over the block the plugin names and hands it back to dock", async () => {

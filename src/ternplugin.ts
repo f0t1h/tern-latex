@@ -427,7 +427,7 @@ export async function removeTernPlugin(p: TernPluginInstall): Promise<void> {
 export type PluginReply = Partial<Record<(typeof REPLY_NUMBERS)[number], number> & Record<(typeof REPLY_FLAGS)[number], boolean>>;
 
 const REPLY_NUMBERS = ["viewer", "editor", "agent", "pane", "owner", "shown", "near", "tabRows"] as const;
-const REPLY_FLAGS = ["needsViewer", "needsEditor", "needsAgent", "above"] as const;
+const REPLY_FLAGS = ["needsViewer", "needsEditor", "needsAgent", "above", "opened"] as const;
 
 /**
  * Asks the plugin's window half (the window this process runs in) to run `op`: writes a request file into the
@@ -577,11 +577,13 @@ export async function layoutTab(args: LayoutArgs, o: { timeoutMs?: number } = {}
 }
 
 /**
- * Shows `path` (at `line`) for the viewer's click-to-source: the block already showing it, else a new one below
- * the project's editor or above its omp block (the plugin's `open` op says which), else in a new tab.
+ * Shows `path` (at `line`) for the viewer's click-to-source: the block already showing it, else in the project's
+ * editor block in place of its file (the plugin does that itself), else a new block below the editor or above
+ * the omp block (the plugin's `open` op says which), else in a new tab.
  */
 export async function openSource(devPane: number, path: string, line?: number): Promise<void> {
-  const where = await pluginCall("open", { devPane, path });
+  const where = await pluginCall("open", { devPane, path, ...(line ? { line } : {}) });
+  if (where.opened) return;
   const target = line ? `${path}:${line}` : path;
   if (where.shown !== undefined) await openFile(where.shown, target, []);
   else if (where.near === undefined) await openFile(devPane, target, ["--tab"]);

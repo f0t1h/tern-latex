@@ -461,14 +461,19 @@ local function op_ask(args: { [string]: any }, cx: WindowCx, done: Done)
 	done({ agent = target })
 end
 
--- Where ternlatex should open `path` (it opens it with `tern open`: a file
--- block takes longer to create than a window hook's budget): `shown`, the
--- block already showing it, preferring the dev block's tab; else `near`, the
--- block to open it below (the project's editor), or above (`above`, its omp
--- block), never splitting the dev block or the viewer; else nothing (a tab).
+-- Opens `path` (at `line`) for the viewer: focuses a block already showing
+-- it, preferring the dev block's tab (`shown`); else shows it in the
+-- project's editor block in place of what that block shows (`opened`), so a
+-- trip from the PDF to the source doesn't pile up blocks; an editor with
+-- unsaved edits keeps them and Tern opens a new block beside it. Without an
+-- editor block it answers where ternlatex should open one with `tern open`
+-- (a new file block takes longer than this hook's budget): `near`, the block
+-- to split below, or above (`above`, its omp block), never the dev block or
+-- the viewer; else nothing (a tab).
 local function op_open(args: { [string]: any }, cx: WindowCx, done: Done)
 	local dev = number_arg(args, "devPane")
 	local path = string_arg(args, "path")
+	local line = if type(args.line) == "number" then args.line else nil
 	local tab = cx.session:tab_of(dev)
 	local shown: PaneInfo? = nil
 	for _, p in cx.session:panes() do
@@ -481,17 +486,25 @@ local function op_open(args: { [string]: any }, cx: WindowCx, done: Done)
 		return
 	end
 	local rec = project_for(cx, dev, nil)
-	local beside: PaneInfo? = if rec then live(cx, rec.editor, "file") else nil
-	if beside == nil and tab then
+	local editor: PaneInfo? = if rec then live(cx, rec.editor, "file") else nil
+	if editor == nil and tab then
 		for _, p in panes_in_tab(cx, tab) do
 			if p.kind == "file" then
-				beside = p
+				editor = p
 				break
 			end
 		end
 	end
-	if beside then
-		done({ near = beside.pane })
+	if editor then
+		cx.layout:focus(editor.pane)
+		cx:open(if line then path .. "#L" .. line else path, "replace")
+		local now = cx.session:focused()
+		-- The editor is now the block showing `path` (the same one, or a new one beside an unsaved editor).
+		if rec and now and editor.pane == rec.editor then
+			rec.editor = now
+			remember(rec)
+		end
+		done({ opened = true })
 		return
 	end
 	local agent = if rec then live(cx, rec.agent) else nil

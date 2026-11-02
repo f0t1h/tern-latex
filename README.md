@@ -194,7 +194,9 @@ Keys are written for macOS. On Windows and Linux, ⌘ is Ctrl and ⌥ is Alt: �
 
 Inside Tern, `ternlatex dev` lays out the tab: editor and viewer side by side, omp below the editor and a
 short dev block at the bottom. It reuses blocks a previous `dev` left. Clicks in the viewer open sources
-in the editor, and prompts go to the project's omp block. If you resize the blocks, ternlatex keeps your
+in the editor block, which switches to that file rather than a new block opening each time (a file
+already open elsewhere is focused there; an editor with unsaved edits stays, and the file opens in a
+block beside it). Prompts go to the project's omp block. If you resize the blocks, ternlatex keeps your
 sizes; **Reset layout sizes** in the palette restores the defaults.
 
 Editor keys work in a `.tex` file block of a ternlatex project:
