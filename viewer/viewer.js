@@ -1566,12 +1566,19 @@ function rewriteOpen() {
   return !ui.rewritePanel.hidden;
 }
 
+/** Sizes a textarea to its text, within its CSS min/max height. */
+function autoGrow(area) {
+  area.style.height = 'auto';
+  area.style.height = `${area.scrollHeight + 2}px`;
+}
+
 function openRewrite() {
   const info = state.sel;
   if (!info || selBusy || !state.caps.rewrite) return;
   rw = { info, gen: 0, result: null, cursor: 0, busy: false };
   hideSelBar();
   ui.rewriteInput.value = '';
+  autoGrow(ui.rewriteInput);
   ui.rewriteOriginal.textContent = info.text;
   ui.rewriteModel.textContent = '';
   ui.rewritePanel.hidden = false;
@@ -3759,15 +3766,18 @@ ui.selSource.addEventListener('click', selSource);
 ui.selProofread.addEventListener('click', () => sendToAgent('proofread'));
 ui.selRewrite.addEventListener('click', openRewrite);
 ui.rewriteClose.addEventListener('click', closeRewrite);
+ui.rewriteInput.addEventListener('input', () => autoGrow(ui.rewriteInput));
 ui.rewriteInput.addEventListener('keydown', (e) => {
   e.stopPropagation(); // keep global shortcuts (Escape, digits, zoom) out of the input
-  if (e.key === 'Enter' && !e.isComposing) {
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
     e.preventDefault();
     askRewrite();
   } else if (e.key === 'Escape') {
     e.preventDefault();
-    if (ui.rewriteInput.value) ui.rewriteInput.value = '';
-    else closeRewrite();
+    if (ui.rewriteInput.value) {
+      ui.rewriteInput.value = '';
+      autoGrow(ui.rewriteInput);
+    } else closeRewrite();
   }
 });
 ui.selAsk.addEventListener('click', openAsk);
