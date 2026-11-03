@@ -228,6 +228,6 @@ function report(s: Status): void {
     console.log(`[${t}] ${s.doc} reused an earlier build of these sources, ${warnings.length} warnings (rev ${s.rev})`);
     return;
   }
-  console.log(s.ok ? ` ok ${secs}s, ${warnings.length} warnings (rev ${s.rev})` : ` ${s.partial ? "PARTIAL" : "FAILED"} ${secs}s, ${errors.length} errors — ${failedPdf(s)}`);
+  console.log(s.ok ? ` ok ${secs}s${s.fast ? " (1 pass)" : ""}, ${warnings.length} warnings (rev ${s.rev})` : ` ${s.partial ? "PARTIAL" : "FAILED"} ${secs}s, ${errors.length} errors — ${failedPdf(s)}`);
   for (const d of [...errors, ...warnings].slice(0, 8)) console.log(`  ${formatDiagnostic(d)}`);
 }

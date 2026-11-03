@@ -426,6 +426,14 @@ the last 8 builds of each document. When the sources match one of them (a save t
 undone edit, a `dev` restart), the viewer shows that PDF at once ("Reused earlier build"). **↻** in the
 viewer and `ternlatex build --force` always compile.
 
+Tectonic starts every build from nothing: a TeX run, BibTeX, and up to three more TeX runs while the
+cross-references settle. ternlatex keeps the last full build's `.aux`, `.bbl` and the like and first tries
+one TeX run on them. When that run writes them back unchanged (most edits to prose, and review marks unless
+the document prints `\listofchanges`), its PDF is the full build's and that is all: on a 15-page paper,
+about 0.45 s instead of 1.2–1.7 s; the dev log says `(1 pass)`. When something moved (a new label or
+citation, a page reference that changed) the viewer shows that PDF at once and the full build replaces it
+a second later.
+
 The viewer shows a strip with each document's live status. Switch with ⌥1…⌥9 or ⌥[ and ⌥]; `#doc=NAME`
 in the URL opens a document. Position and zoom are remembered per document. **⧉** on a document opens it
 in a second viewer block beside the first, e.g. the paper next to the slides. `ternlatex docs` lists the

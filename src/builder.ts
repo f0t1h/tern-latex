@@ -26,6 +26,8 @@ export interface Status {
   finishedAt?: string;
   /** The PDF came from the build cache (its sources match an earlier build) instead of a compile. */
   cached?: boolean;
+  /** The PDF came from one TeX run on the last full build's references, which it left unchanged (engine.ts fastPass). */
+  fast?: boolean;
   /** While building: why it may take long (the first build downloads the TeX packages). */
   note?: string;
   engine: string;
@@ -251,9 +253,18 @@ export class Builder extends EventEmitter<{ status: [Status] }> {
     let ok = false;
     let partial = false;
     let placeholders: string[] | undefined;
+    let fast = false;
     let diagnostics: Diagnostic[];
     try {
-      const result = await compile(this.cfg, s.doc);
+      const result = await compile(this.cfg, s.doc, {
+        // A one-pass PDF whose references moved: shown now, while the full build settles them.
+        provisional: async (r) => {
+          await publish(r.pdf, p.pdf);
+          if (existsSync(r.synctex)) await publish(r.synctex, p.synctex);
+          this.#update(s, { rev: s.status.rev + 1, note: "references changed: finishing the full build" });
+        },
+      });
+      fast = result.fast === true;
       ok = result.ok;
       partial = result.partial;
       placeholders = result.placeholders;
@@ -285,6 +296,7 @@ export class Builder extends EventEmitter<{ status: [Status] }> {
       partial,
       placeholders,
       cached: false,
+      fast,
       note: undefined,
       rev: ok || partial ? s.status.rev + 1 : s.status.rev,
       durationMs: Date.now() - started,

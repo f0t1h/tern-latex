@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync, statSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { copyFile, mkdir, rm } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { type Config, type DocConfig, docPaths, posix } from "./config.ts";
 import { type Diagnostic, mergeDiagnostics, parseLog, parseTectonicOutput } from "./diagnostics.ts";
@@ -23,14 +23,23 @@ export interface CompileResult {
   deps: string[] | null;
   /** Placeholders a partial build used, as the sources name the missing files. */
   placeholders?: string[];
+  /**
+   * From one TeX run on the last full build's .aux, .bbl and other intermediates, which it reproduced unchanged:
+   * the PDF a full build would make, in a third of the time (fastPass).
+   */
+  fast?: boolean;
+}
+
+export interface CompileOptions {
+  /** Shows a one-pass PDF whose references changed while the full build that settles them runs. */
+  provisional?: (r: CompileResult) => Promise<void>;
 }
 
 /** Compiles one document into its staging directory. Never touches the published outputs. */
-export async function compile(cfg: Config, doc: DocConfig): Promise<CompileResult> {
+export async function compile(cfg: Config, doc: DocConfig, o: CompileOptions = {}): Promise<CompileResult> {
   const p = docPaths(cfg, doc);
   await mkdir(p.staging, { recursive: true });
   const staged = p.staged;
-  const started = Date.now();
   const args =
     cfg.engine === "tectonic"
       ? ["-X", "compile", "--synctex", "--keep-logs", "--keep-intermediates", "--bundle", cfg.bundle, "--makefile-rules", p.deps, "--outdir", p.staging, doc.root]
@@ -43,11 +52,18 @@ export async function compile(cfg: Config, doc: DocConfig): Promise<CompileResul
     return { ok: false, partial: false, ...staged, deps: null, diagnostics: [{ severity: "error", message: e.message }] };
   }
   const cmd = cfg.engine;
+  if (cfg.engine === "tectonic") {
+    const fast = await fastPass(cfg, doc, command);
+    if (fast?.settled) return fast.result;
+    if (fast) await o.provisional?.(fast.result);
+  }
+  // Since the full run itself, not the fast pass before it: only what this run wrote counts.
+  const runStarted = Date.now();
   const run = await exec(command, args, cfg.dir);
   if (run.spawnError) return { ok: false, partial: false, ...staged, deps: null, diagnostics: [{ severity: "error", message: `cannot run ${command[0]}: ${run.spawnError}` }] };
-  const fresh = (f: string, since = started) => existsSync(f) && statSync(f).mtimeMs >= since - 1000;
-  const logText = fresh(staged.log) ? readFileSync(staged.log, "utf8") : "";
-  const ok = run.code === 0 && fresh(staged.pdf);
+  const isFresh = (f: string, since = runStarted) => fresh(f, since);
+  const logText = isFresh(staged.log) ? readFileSync(staged.log, "utf8") : "";
+  const ok = run.code === 0 && isFresh(staged.pdf);
   const all = mergeDiagnostics(
     cfg.engine === "tectonic" ? parseTectonicOutput(run.output, cfg.dir) : [],
     parseLog(logText, cfg.dir),
@@ -58,8 +74,10 @@ export async function compile(cfg: Config, doc: DocConfig): Promise<CompileResul
     const tail = run.output.trim().split("\n").slice(-5).join("\n");
     diagnostics.unshift({ severity: "error", message: `${cmd} exited with ${run.code}${tail ? `: ${tail}` : ""}` });
   }
-  const depsOf = (since: number) => (fresh(p.deps, since) ? parseDeps(readFileSync(p.deps, "utf8"), cfg.dir, relative(cfg.dir, p.staging)) : null);
-  if (ok || !cfg.partial) return { ok, partial: false, ...staged, deps: ok ? depsOf(started) : null, diagnostics };
+  const depsOf = (since: number) => (fresh(p.deps, since) ? projectDeps(cfg, p.staging, readFileSync(p.deps, "utf8")) : null);
+  // A full build's intermediates seed the next save's fast pass.
+  if (ok && cfg.engine === "tectonic") await keepSeed(p.staging, runStarted).catch(() => {});
+  if (ok || !cfg.partial) return { ok, partial: false, ...staged, deps: ok ? depsOf(runStarted) : null, diagnostics };
 
   // Partial build: again, past the errors (Tectonic's continue-on-errors, latexmk -f), with stand-ins for the
   // missing files on Tectonic's search path. A run stopped by an error only reports the first missing file, so
@@ -101,6 +119,79 @@ export async function compile(cfg: Config, doc: DocConfig): Promise<CompileResul
     diagnostics: mergeDiagnostics([...missingErrors.values()], result.diagnostics),
     ...(placeholders.length ? { placeholders } : {}),
   };
+}
+
+/** The intermediates a full build leaves for the next fast pass: under the staging directory, read through `-Z search-path`. */
+const SEED = "seed";
+/** Outputs that are not read back by a TeX run: BibTeX's log (.blg) too, which a pass without BibTeX doesn't write. */
+const NOT_INTERMEDIATE = /\.(?:pdf|synctex\.gz|log|blg|xdv|fls)$|^deps\.mk$/;
+
+function fresh(f: string, since: number): boolean {
+  return existsSync(f) && statSync(f).mtimeMs >= since - 1000;
+}
+
+/** Intermediate files of DIR (.aux, .bbl, .toc, .out, …), those written since SINCE when given. */
+function intermediates(dir: string, since?: number): string[] {
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir, { withFileTypes: true })
+    .filter((e) => e.isFile() && !NOT_INTERMEDIATE.test(e.name) && (since === undefined || fresh(join(dir, e.name), since)))
+    .map((e) => e.name)
+    .sort();
+}
+
+/** Replaces the seed with the intermediates the full build that started at SINCE wrote. */
+async function keepSeed(staging: string, since: number): Promise<void> {
+  const seed = join(staging, SEED);
+  await rm(seed, { recursive: true, force: true });
+  await mkdir(seed, { recursive: true });
+  for (const f of intermediates(staging, since)) await copyFile(join(staging, f), join(seed, f));
+}
+
+/**
+ * One TeX run given the last full build's intermediates (Tectonic otherwise starts from nothing and runs TeX
+ * about four times, with BibTeX between). It settles when the run writes back exactly those intermediates:
+ * nothing that feeds cross-references, citations, the outline or the list of changes moved, so its PDF is the
+ * full build's. Otherwise (a new label, a citation, a page reference that moved) it is provisional and the
+ * full build follows. Null when there is no seed yet or the run failed: the full build reports errors.
+ */
+async function fastPass(cfg: Config, doc: DocConfig, command: string[]): Promise<{ result: CompileResult; settled: boolean } | null> {
+  const p = docPaths(cfg, doc);
+  const seed = join(p.staging, SEED);
+  const seeded = intermediates(seed);
+  if (!seeded.some((f) => f.endsWith(".aux"))) return null;
+  const started = Date.now();
+  const args = ["-X", "compile", "--synctex", "--keep-logs", "--keep-intermediates", "--reruns", "0", "-Z", `search-path=${seed}`, "--bundle", cfg.bundle, "--makefile-rules", p.deps, "--outdir", p.staging, doc.root];
+  const run = await exec(command, args, cfg.dir);
+  if (run.spawnError || run.code !== 0 || !fresh(p.staged.pdf, started)) return null;
+  const deps = fresh(p.deps, started) ? projectDeps(cfg, p.staging, readFileSync(p.deps, "utf8")) : null;
+  // The changes package lists every mark (\deleted, \added, …) in .loc and .soc, and in the .aux on their way
+  // there: read back only by \listofchanges. A document without it settles whatever marks come or go.
+  const listsChanges = deps === null || deps.some((f) => /\.(?:tex|sty|cls)$/.test(f) && existsSync(join(cfg.dir, f)) && readFileSync(join(cfg.dir, f), "utf8").includes("\\listofchanges"));
+  const compared = (names: string[]) => names.filter((f) => listsChanges || !/\.(?:loc|soc)$/.test(f));
+  const written = compared(intermediates(p.staging, started));
+  const base = compared(seeded);
+  const same = (f: string) => settledText(readFileSync(join(p.staging, f), "utf8"), listsChanges) === settledText(readFileSync(join(seed, f), "utf8"), listsChanges);
+  const settled = written.length === base.length && written.every((f, i) => f === base[i] && same(f));
+  const log = fresh(p.staged.log, started) ? readFileSync(p.staged.log, "utf8") : "";
+  const diagnostics = mergeDiagnostics(parseTectonicOutput(run.output, cfg.dir), parseLog(log, cfg.dir));
+  return { result: { ok: true, partial: false, ...p.staged, deps, diagnostics, fast: true }, settled };
+}
+
+/** The project files a run read, from its Makefile rules: not the seed it was given. */
+function projectDeps(cfg: Config, staging: string, mk: string): string[] {
+  const out = posix(relative(cfg.dir, staging));
+  return parseDeps(mk, cfg.dir, relative(cfg.dir, staging)).filter((f) => !f.startsWith(`${out}/`));
+}
+
+/**
+ * An intermediate as far as settling goes: without the page positions pgf records for `remember picture`
+ * overlays (todonotes' lines), which move a little on every run, a full build's included, and only place
+ * those drawings; without the list-of-changes entries unless LISTS_CHANGES.
+ */
+function settledText(text: string, listsChanges: boolean): string {
+  // Whole lines, newline included: two runs listing a different number of changes must still compare equal.
+  const out = text.replace(/^\\pgfsyspdfmark .*(?:\n|$)/gm, "");
+  return listsChanges ? out : out.replace(/^\\@writefile\{loc\}.*(?:\n|$)/gm, "");
 }
 
 /** Partial builds a missing file can take: each finds the next missing \input or figure an error stopped at. */
