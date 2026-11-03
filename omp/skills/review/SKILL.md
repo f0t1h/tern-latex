@@ -16,6 +16,8 @@ The house style (`style/ternlatex.sty`) loads `changes` and the generated `style
 \added[id=AK, comment={why}]{new text}       % comment= works on added/deleted/replaced/highlight
 ```
 
+Comments are margin notes, which LaTeX can't place inside a figure or table (captions included), a minipage, a footnote or a section title: there the build stops with "Not in outer par mode". In those places leave `comment=` out, and put a `\comment` right after the `\end{figure}` (or the footnote's closing brace), saying what it refers to: `\comment[id=omp]{caption: …}`.
+
 An `id` not in `[review] authors` (or `omp`) stops the build with "Undefined changes author". Fix it by adding the author to the toml, e.g. `authors = [{ id = "AK", name = "Ana K", color = "orange" }]`; never by deleting the id.
 
 ## Commands
@@ -46,6 +48,7 @@ When the user asks you to edit with tracking, or `ternlatex.toml` lists `[review
 - rewritten text: `\replaced[id=omp]{new}{old}`, scoped to the smallest span that changed (a word or phrase, not the whole sentence).
 
 Keep markup out of places where it breaks or makes no sense: math, `\label`/`\ref`/`\cite` keys, `tabular` alignment (`&`, `\\`), verbatim and section titles (track inside the title text only if it stays one argument). Edit those directly and mention them. Never wrap someone else's change in yours; edit inside it, or ask.
+Tracked edits inside a caption or footnote are fine; only their `comment=` must go (see above).
 
 ## Never
 

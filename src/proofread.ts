@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Status } from "./builder.ts";
-import { boxRefs, escapeLatex, PROOF_AUTHOR, texFiles } from "./changes.ts";
+import { boxRefs, escapeLatex, marginBlock, PROOF_AUTHOR, texFiles } from "./changes.ts";
 import { type Config, docPaths, paths, posix, UsageError } from "./config.ts";
 import { addPending } from "./suggestions.ts";
 import { type Model, taskModel } from "./models.ts";
@@ -279,29 +279,37 @@ export function hunksFor(p: Paragraph, s: Suggestion, spans: [number, number][])
   return hunks.length ? hunks : "no-op";
 }
 
-/** The file text with hunks applied, as AUTHOR's tracked changes or directly. Hunks must not overlap. */
+/**
+ * The file text with hunks applied, as AUTHOR's tracked changes or directly. Hunks must not overlap. Where a
+ * margin note can't go (marginBlock: a caption, a float, a footnote) a mark carries no `comment=` and a
+ * `\comment` goes right after the construct, saying what it is about.
+ */
 export function applyHunks(text: string, hunks: Hunk[], direct: boolean, author: string): string {
-  let out = text;
-  for (const h of [...hunks].sort((a, b) => b.start - a.start)) {
-    const opts = `id=${author}${h.why && h.markup !== "comment" ? `,comment={${escapeLatex(h.why)}}` : ""}`;
+  const edits = hunks.map((h, order) => {
+    const blocked = direct ? null : marginBlock(text, h.start);
+    if (h.markup === "comment") {
+      const at = blocked ? blocked.after : h.start;
+      const note = blocked ? `${blocked.what}: ${h.why}` : h.why;
+      return { start: at, end: blocked ? at : h.end, order, markup: direct ? "" : `\\comment[id=${author}]{${escapeLatex(note)}}` };
+    }
+    const opts = `id=${author}${h.why && !blocked ? `,comment={${escapeLatex(h.why)}}` : ""}`;
     const markup =
-      h.markup === "comment"
+      h.markup === "highlight"
         ? direct
-          ? ""
-          : `\\comment[id=${author}]{${escapeLatex(h.why)}}`
-        : h.markup === "highlight"
-          ? direct
-            ? h.old
-            : `\\highlight[${opts}]{${boxRefs(h.old)}}`
-      : direct
-        ? h.new
-        : h.old && h.new
-          ? `\\replaced[${opts}]{${h.new}}{${boxRefs(h.old)}}`
-          : h.new
-            ? `\\added[${opts}]{${h.new}}`
-            : `\\deleted[${opts}]{${boxRefs(h.old)}}`;
-    out = out.slice(0, h.start) + markup + out.slice(h.end);
-  }
+          ? h.old
+          : `\\highlight[${opts}]{${boxRefs(h.old)}}`
+        : direct
+          ? h.new
+          : h.old && h.new
+            ? `\\replaced[${opts}]{${h.new}}{${boxRefs(h.old)}}`
+            : h.new
+              ? `\\added[${opts}]{${h.new}}`
+              : `\\deleted[${opts}]{${boxRefs(h.old)}}`;
+    return { start: h.start, end: h.end, order, markup };
+  });
+  let out = text;
+  // From the end, so earlier offsets stay valid; notes moved to one spot keep their order.
+  for (const e of edits.sort((a, b) => b.start - a.start || b.order - a.order)) out = out.slice(0, e.start) + e.markup + out.slice(e.end);
   return out;
 }
 
@@ -426,8 +434,8 @@ export async function writeSuggestions(cfg: Config, hunks: Hunk[], snapshots: Ma
     return { hunks, skipped, pending: true };
   }
   await checkpoint(cfg, `before ${o.label}`);
-  // Documents already failing are not blamed on the edits.
-  const before = brokenDocs(cfg);
+  // A document already failing is blamed only for errors beyond the ones it had (a missing figure, say).
+  const before = errorCounts(cfg);
   const byFile = new Map<string, Hunk[]>();
   for (const h of hunks) byFile.set(h.file, [...(byFile.get(h.file) ?? []), h]);
   const written = new Map<string, string>();
@@ -451,22 +459,31 @@ export async function writeSuggestions(cfg: Config, hunks: Hunk[], snapshots: Ma
   if (!applied.length) return { hunks: applied, skipped };
 
   const after = await o.build();
-  const newlyBroken = after.filter((s) => s.ok === false && !before.has(s.doc));
+  const errors = (s: Status) => s.diagnostics.filter((d) => d.severity === "error");
+  const newlyBroken = after.filter((s) => s.ok === false && errors(s).length > (before[s.doc] ?? 0));
   if (newlyBroken.length) {
     for (const [file, text] of written) await writeAtomic(join(cfg.dir, file), text);
     await o.build();
-    const first = newlyBroken[0].diagnostics.find((d) => d.severity === "error");
-    return { hunks: [], skipped, reverted: `${newlyBroken.map((s) => s.doc).join(", ")} stopped building${first ? ` (${first.message})` : ""}; edits reverted` };
+    const all = newlyBroken.flatMap(errors);
+    const first = all.find((d) => d.file !== undefined && written.has(d.file)) ?? all[0];
+    const what = newlyBroken.every((s) => before[s.doc] === undefined) ? "stopped building" : "got new build errors";
+    return { hunks: [], skipped, reverted: `${newlyBroken.map((s) => s.doc).join(", ")} ${what}${first ? ` (${first.message})` : ""}; edits reverted` };
   }
   return { hunks: applied, skipped };
 }
 
-/** Documents whose last build (build/status.json) failed. */
-function brokenDocs(cfg: Config): Set<string> {
+/** Error counts of the documents whose last build (build/status.json) failed. */
+function errorCounts(cfg: Config): Record<string, number> {
   const file = paths(cfg).status;
   const v: unknown = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : null;
-  const docs = v && typeof v === "object" && "docs" in v && Array.isArray(v.docs) ? v.docs : [];
-  return new Set(docs.flatMap((s: unknown) => (s && typeof s === "object" && "doc" in s && "ok" in s && s.ok === false && typeof s.doc === "string" ? [s.doc] : [])));
+  const docs: unknown[] = v && typeof v === "object" && "docs" in v && Array.isArray(v.docs) ? v.docs : [];
+  const out: Record<string, number> = {};
+  for (const s of docs) {
+    if (!s || typeof s !== "object" || !("doc" in s) || typeof s.doc !== "string" || !("ok" in s) || s.ok !== false) continue;
+    const diags: unknown[] = "diagnostics" in s && Array.isArray(s.diagnostics) ? s.diagnostics : [];
+    out[s.doc] = diags.filter((d) => d && typeof d === "object" && "severity" in d && d.severity === "error").length;
+  }
+  return out;
 }
 
 /** Whether every document that reads these files loads the `changes` package (needed for tracked markup). */

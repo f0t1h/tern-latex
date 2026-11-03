@@ -367,6 +367,74 @@ function unboxRefs(text: string): string {
   return text.replace(/\\mbox\{(\\(?:autoref|[cC]ref|[cC]pageref|labelcref|[cC]refrange)\*?(?:\[[^\]]*\])*(?:\{[^{}]*\})+)\}/g, "$1");
 }
 
+/**
+ * Places a margin note can't go: `changes` typesets comments (`\comment`, a mark's `comment=`) with \marginpar,
+ * which needs outer paragraph mode, so in a float, a minipage or table, a footnote, a caption or a heading the
+ * build stops ("Not in outer par mode"). Environment names match whole or by these stems.
+ */
+const NO_MARGIN_ENV = /^(?:figure|table|algorithm|minipage|tabular|tabularx|tabulary|longtable|array|wrapfigure|wraptable|sidewaysfigure|sidewaystable|subfigure|subtable|floatrow|tcolorbox|mdframed|framed)\*?$/;
+const NO_MARGIN_CMD = /^(?:footnote|footnotetext|caption|captionof|subcaption|parbox|mbox|makebox|fbox|framebox|marginpar|part|chapter|section|subsection|subsubsection|paragraph|subparagraph|title)\*?$/;
+
+/** Where a margin note at AT can't go: the construct that stops it, and the offset just after it; null when it can. */
+export function marginBlock(text: string, at: number): { what: string; after: number } | null {
+  // Open constructs around the scan position: environments, and brace groups labelled by the command they belong to.
+  const stack: { env?: string; cmd?: string }[] = [];
+  let lastCmd: { name: string; end: number } | null = null;
+  let outer = -1; // stack index of the outermost blocking construct once AT is reached
+  for (let i = 0; i < text.length; i++) {
+    if (outer < 0 && i >= at) {
+      outer = stack.findIndex((s) => (s.env !== undefined && NO_MARGIN_ENV.test(s.env)) || (s.cmd !== undefined && NO_MARGIN_CMD.test(s.cmd)));
+      if (outer < 0) return null;
+    }
+    const c = text[i];
+    if (c === "%") {
+      i = lineEnd(text, i) - 1;
+    } else if (c === "\\") {
+      const name = /^\\([A-Za-z@]+\*?)/.exec(text.slice(i, i + 40))?.[1];
+      if (!name) {
+        i++;
+        continue;
+      }
+      const env = /^\\(begin|end)\s*\{([^{}]+)\}/.exec(text.slice(i, i + 80));
+      if (env) {
+        if (env[1] === "begin") stack.push({ env: env[2] });
+        else {
+          const k = stack.map((s) => s.env).lastIndexOf(env[2]);
+          if (k >= 0) stack.length = k;
+        }
+        i += env[0].length - 1;
+        lastCmd = null;
+        if (outer >= 0 && stack.length <= outer) return { what: env[2].replace(/\*$/, ""), after: i + 1 };
+        continue;
+      }
+      lastCmd = { name, end: i + 1 + name.length };
+      i += name.length;
+    } else if (c === "[" && lastCmd && /^\s*$/.test(text.slice(lastCmd.end, i))) {
+      // An optional argument keeps the command its braces belong to.
+      const close = matchBracket(text, i);
+      if (close < 0 || (at > i && at < close)) {
+        lastCmd = null;
+        continue;
+      }
+      lastCmd = { name: lastCmd.name, end: close + 1 };
+      i = close;
+    } else if (c === "{") {
+      const own: string = lastCmd && /^\s*$/.test(text.slice(lastCmd.end, i)) ? lastCmd.name : "";
+      stack.push({ cmd: own });
+      // Inside the group nothing is pending; its closing brace hands the command on to a next argument (\parbox{w}{…}).
+      lastCmd = null;
+    } else if (c === "}") {
+      const top = stack.at(-1);
+      if (top && top.env === undefined) stack.pop();
+      if (outer >= 0 && stack.length <= outer) return { what: (top?.cmd ?? "group").replace(/\*$/, ""), after: i + 1 };
+      lastCmd = top?.cmd ? { name: top.cmd, end: i + 1 } : null;
+    } else if (!/\s/.test(c)) {
+      lastCmd = null;
+    }
+  }
+  return outer >= 0 ? { what: "group", after: text.length } : null;
+}
+
 /** Applies `decision` to the target spans of `text`; nested targets resolve inside their kept argument. */
 export function rewrite(text: string, targets: Span[], decision: "accept" | "reject"): string {
   const sorted = [...targets].sort((a, b) => a.start - b.start || b.end - a.end);

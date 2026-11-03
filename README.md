@@ -352,6 +352,12 @@ can span paragraphs: a comment goes after the last one, a strike or highlight be
 package, strikes, replacements and insertions wait in ✎ Review as suggestions; highlights and comments
 need it.
 
+Comments are margin notes, and LaTeX can't place those in a figure or table (captions included), a
+footnote or a heading. Marks there, yours or the proofreader's, go in without their `comment=` reason,
+and a comment goes right after the figure (or footnote), starting with what it is about:
+`\comment[id=AK]{figure: …}`. Edits that bring new build errors are undone, also in a document that
+failed to build before.
+
 `ternlatex comments import annotated.pdf --author AK` turns a reviewer's PDF annotations (sticky notes,
 highlights) into `\comment`s on the matching source lines. `/skill:review` has omp work through the
 comments. `ternlatex changes`, `accept` and `reject` do the same on the command line.

@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
-import { test } from "bun:test";
-import { applyHunks, hunksFor, paragraphs, protectedSpans, replyArray } from "../src/proofread.ts";
+import { afterAll, test } from "bun:test";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import type { Status } from "../src/builder.ts";
+import { loadConfig, paths } from "../src/config.ts";
+import { applyHunks, type Hunk, hunksFor, paragraphs, protectedSpans, replyArray, writeSuggestions } from "../src/proofread.ts";
+
+const root = mkdtempSync(join(tmpdir(), "ternlatex-proofread-test-"));
+afterAll(() => rmSync(root, { recursive: true, force: true }));
 
 const SOURCE = `\\documentclass{article}
 \\title{A Title}
@@ -44,6 +52,41 @@ test("a sentence-level suggestion becomes minimal word hunks, written as tracked
   assert.equal(applyHunks(SOURCE, r, true, "proof").split("\n")[3].startsWith("Fast feedback changes how people write,"), true);
 });
 
+test("in a caption or footnote, where margin notes stop the build, marks carry no comment and notes follow the float", () => {
+  const src = [
+    "\\begin{document}",
+    "Before the figure.",
+    "\\begin{figure}",
+    "  \\caption[Short]{Unitigs of each strand.}",
+    "\\end{figure}",
+    "After it.\\footnote{A note with an eror.}",
+    "\\end{document}",
+    "",
+  ].join("\n");
+  const mark = (old: string, replacement: string, why: string): Hunk => {
+    const start = src.indexOf(old);
+    return { file: "main.tex", start, end: start + old.length, old, new: replacement, why, line: 1 };
+  };
+  const note = (after: string, why: string): Hunk => {
+    const at = src.indexOf(after) + after.length;
+    return { file: "main.tex", start: at, end: at, old: "", new: "", why, line: 1, markup: "comment" };
+  };
+  const out = applyHunks(src, [mark("Before", "Ahead of", "style"), mark("each strand", "both strands", "wording"), note("strand.", "is this right?"), mark("eror", "error", "spelling")], false, "proof");
+  assert.equal(
+    out,
+    [
+      "\\begin{document}",
+      "\\replaced[id=proof,comment={style}]{Ahead of}{Before} the figure.",
+      "\\begin{figure}",
+      "  \\caption[Short]{Unitigs of \\replaced[id=proof]{both strands}{each strand}.}",
+      "\\end{figure}\\comment[id=proof]{figure: is this right?}",
+      "After it.\\footnote{A note with an \\replaced[id=proof]{error}{eror}.}",
+      "\\end{document}",
+      "",
+    ].join("\n"),
+  );
+});
+
 test("edits touching keys, labels, math or comments are refused", () => {
   const ps = paragraphs(SOURCE, "main.tex");
   const [p, q] = ps;
@@ -85,4 +128,37 @@ test("a model reply yields its suggestion list whether bare, fenced or wrapped i
   assert.deepEqual(replyArray("[]"), []);
   assert.equal(replyArray('[{"find": "teh", "replace": "the"'), null);
   assert.equal(replyArray("The paragraph has no errors."), null);
+});
+
+test("marks that add build errors are reverted, also in a document that was already failing", async () => {
+  const dir = join(root, "failing");
+  mkdirSync(dir);
+  writeFileSync(join(dir, "ternlatex.toml"), 'root = "main.tex"\ncheckpoints = false\n');
+  const text = "\\begin{document}\nA sentense here.\n\\end{document}\n";
+  writeFileSync(join(dir, "main.tex"), text);
+  const cfg = loadConfig(dir);
+  const status = (errors: number): Status => ({
+    doc: "main",
+    root: "main.tex",
+    build: 1,
+    rev: 1,
+    state: "idle",
+    ok: errors === 0,
+    engine: "tectonic",
+    diagnostics: Array.from({ length: errors }, (_, i) => ({ severity: "error" as const, message: `error ${i}`, file: "main.tex", line: 2 })),
+  });
+  // The last build failed once already (a missing figure, say).
+  mkdirSync(dirname(paths(cfg).status), { recursive: true });
+  writeFileSync(paths(cfg).status, JSON.stringify({ docs: [status(1)] }));
+  const at = text.indexOf("sentense");
+  const hunk: Hunk = { file: "main.tex", start: at, end: at + 8, old: "sentense", new: "sentence", why: "spelling", line: 2 };
+  const opts = (errors: number) => ({ author: "proof", direct: false, label: "test", build: async () => [status(errors)] });
+
+  const worse = await writeSuggestions(cfg, [hunk], new Map([["main.tex", text]]), opts(2));
+  assert.match(worse.reverted ?? "", /main got new build errors/);
+  assert.equal(readFileSync(join(dir, "main.tex"), "utf8"), text);
+
+  const same = await writeSuggestions(cfg, [hunk], new Map([["main.tex", text]]), opts(1));
+  assert.equal(same.reverted, undefined);
+  assert.match(readFileSync(join(dir, "main.tex"), "utf8"), /\\replaced\[id=proof,comment=\{spelling\}\]\{sentence\}\{sentense\}/);
 });
