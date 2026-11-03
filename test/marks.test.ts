@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { initials, renderReviewSetup, reviewer } from "../src/changes.ts";
 import { type Config, loadConfig } from "../src/config.ts";
 import { locateSelection } from "../src/locate.ts";
-import { markHunks } from "../src/marks.ts";
+import { markHunks, replaceableSource } from "../src/marks.ts";
 import { applyHunks } from "../src/proofread.ts";
 
 const dirs: string[] = [];
@@ -77,6 +77,25 @@ describe("review marks", () => {
     expect(markHunks("main.tex", tex, 0, all.length, "delete", "")).toMatch(/footnote/);
     const plain = "See \\autoref{tab:x} now.\n";
     expect(mark(plain, "See \\autoref{tab:x}", "delete")).toBe("\\deleted[id=AK]{See \\mbox{\\autoref{tab:x}}} now.\n");
+    // natbib's citations break the same way.
+    expect(mark("\\Citet{knuth} designed it.\n", "\\Citet{knuth} designed", "replace", "\\Citet{knuth} built")).toBe(
+      "\\replaced[id=AK]{\\Citet{knuth} built}{\\mbox{\\Citet{knuth}} designed} it.\n",
+    );
+  });
+
+  test("Replace… edits the selection's LaTeX: offered as it stands, taken back verbatim", () => {
+    const tex = "As in Fig.~\\ref{fig:a}, \\tool is 50\\% faster.\n\nNext.\n";
+    const sel = "Fig.~\\ref{fig:a}, \\tool is 50\\% faster";
+    const start = tex.indexOf(sel);
+    expect(replaceableSource(tex, start, start + sel.length)).toEqual({ start, end: start + sel.length, latex: sel });
+    const edited = "Fig.~\\ref{fig:a}, \\tool runs 50\\% faster";
+    const h = markHunks("main.tex", tex, start, start + sel.length, "replace", edited, true);
+    if (typeof h === "string") throw new Error(h);
+    expect(applyHunks(tex, h, false, "AK")).toContain(`\\replaced[id=AK]{${edited}}{${sel}}`);
+    // Typed plain text (no source) is still escaped: its ~ is a tilde, not a tie.
+    expect(mark(tex, "faster", "replace", "~2x")).toContain("\\replaced[id=AK]{\\textasciitilde{}2x}{faster}");
+    expect(replaceableSource(tex, start, tex.indexOf("Next.") + 5)).toMatch(/can't span paragraphs/);
+    expect(replaceableSource(tex, tex.indexOf("fig:a}"), tex.indexOf(" is"))).toMatch(/group/);
   });
 });
 

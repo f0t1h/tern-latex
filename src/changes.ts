@@ -352,19 +352,21 @@ export function scanChanges(cfg: Config): Change[] {
 // ---------------------------------------------------------------------------
 
 /**
- * Cross-references `ulem` can't take apart: inside `\deleted`/`\replaced`/`\highlight` (struck or underlined by
- * ulem) \autoref and cleveref's \cref stop the build ("Extra }"); in an \mbox they don't.
+ * Commands `ulem` can't take apart: inside `\deleted`/`\replaced`/`\highlight` (struck or underlined by ulem)
+ * \autoref, cleveref's \cref and natbib/biblatex citations stop the build ("Extra }"); in an \mbox they don't.
  */
-const FRAGILE_REF = /\\(?:autoref|[cC]ref|[cC]pageref|labelcref|[cC]refrange)\*?(?:\[[^\]]*\])*(?:\{[^{}]*\})+/g;
+const FRAGILE = String.raw`\\(?:autoref|[cC]ref|[cC]pageref|labelcref|[cC]refrange|[cC]ite[a-zA-Z]*|[pP]arencite|[tT]extcite|[aA]utocite|[fF]ootcite|[sS]martcite)\*?(?:\[[^\]]*\])*(?:\{[^{}]*\})+`;
+const FRAGILE_REF = new RegExp(FRAGILE, "g");
+const BOXED_REF = new RegExp(String.raw`\\mbox\{(${FRAGILE})\}`, "g");
 
-/** TEXT with each fragile reference in an \mbox, for the argument of a mark ulem draws. */
+/** TEXT with each fragile reference or citation in an \mbox, for the argument of a mark ulem draws. */
 export function boxRefs(text: string): string {
   return text.replace(FRAGILE_REF, (ref, at: number) => (text.slice(Math.max(0, at - 6), at) === "\\mbox{" ? ref : `\\mbox{${ref}}`));
 }
 
 /** Undoes boxRefs when a mark is resolved: the source gets its reference back as it was. */
 function unboxRefs(text: string): string {
-  return text.replace(/\\mbox\{(\\(?:autoref|[cC]ref|[cC]pageref|labelcref|[cC]refrange)\*?(?:\[[^\]]*\])*(?:\{[^{}]*\})+)\}/g, "$1");
+  return text.replace(BOXED_REF, "$1");
 }
 
 /**

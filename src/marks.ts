@@ -64,10 +64,11 @@ function lineAt(src: string, offset: number): number {
  * The tracked changes for a KIND mark on SRC[START, END) of FILE (the selection's source), with TEXT the user
  * typed (the replacement, insertion or comment); a reason instead when it can't be made. `changes` commands
  * can't hold a paragraph break, so a strike or highlight over several paragraphs is one per paragraph; a
- * comment or insertion goes after the selection, wherever it starts.
+ * comment or insertion goes after the selection, wherever it starts. LATEX: TEXT is LaTeX as it stands (a
+ * replacement edited from the source), not typed text to escape.
  */
-export function markHunks(file: string, src: string, start: number, end: number, kind: MarkKind, text: string): Hunk[] | string {
-  const typed = typedLatex(text);
+export function markHunks(file: string, src: string, start: number, end: number, kind: MarkKind, text: string, latex = false): Hunk[] | string {
+  const typed = latex ? text.trim() : typedLatex(text);
   if ((kind === "replace" || kind === "insert" || kind === "comment") && !typed) return `type the ${kind === "comment" ? "comment" : "new text"} first`;
   if (kind === "insert") {
     // After the selection, with the space a word needs unless it starts with punctuation.
@@ -114,4 +115,13 @@ export function markHunks(file: string, src: string, start: number, end: number,
     }
   }
   return hunks;
+}
+
+/** The LaTeX a replacement of SRC[START, END) would take out, for editing; a reason when it can't be replaced. */
+export function replaceableSource(src: string, start: number, end: number): { start: number; end: number; latex: string } | string {
+  // A strike checks the same things a replacement does, one paragraph at a time.
+  const spans = markHunks("", src, start, end, "delete", "");
+  if (typeof spans === "string") return spans;
+  if (spans.length > 1) return "a replacement can't span paragraphs: replace one paragraph at a time, or strike them and insert the new text";
+  return { start: spans[0].start, end: spans[0].end, latex: spans[0].old };
 }

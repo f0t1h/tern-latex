@@ -1375,14 +1375,15 @@ function updateSelButtons() {
 /** What the bar's input is for: an instruction to omp, or the text of a review mark. */
 let selInputMode = 'ask';
 const MARK_INPUT = {
-  replace: { placeholder: 'Replace with… (Enter marks it, Esc cancels)', prefill: true },
-  insert: { placeholder: 'Insert after it… (Enter marks it, Esc cancels)', prefill: false },
-  comment: { placeholder: 'Comment… (Enter adds it, Esc cancels)', prefill: false },
+  replace: { placeholder: 'Replace with… (LaTeX; Enter marks it, Esc cancels)', source: true },
+  insert: { placeholder: 'Insert after it… (Enter marks it, Esc cancels)', source: false },
+  comment: { placeholder: 'Comment… (Enter adds it, Esc cancels)', source: false },
 };
 
 function setAskMode(on) {
   ui.selActions.hidden = on;
   ui.selInput.hidden = !on;
+  ui.selInput.classList.remove('latex');
   if (on) {
     ui.selInput.value = '';
     ui.selInput.focus({ preventScroll: true });
@@ -1395,15 +1396,38 @@ function openAsk() {
   anchorSelBar();
 }
 
-/** The input for a review mark's text; a replacement starts as the selected text. */
-function openMarkInput(kind) {
+/**
+ * The input for a review mark's text. A replacement starts as the selection's LaTeX source (POST /review/source),
+ * sent back as LaTeX; a selection that can't be replaced says why instead.
+ */
+async function openMarkInput(kind) {
   const info = state.sel;
   if (!info || selBusy) return;
+  let latex = null;
+  if (MARK_INPUT[kind].source) {
+    setSelBusy(true);
+    try {
+      const res = await postJSON('/review/source', withDoc({ page: info.page, start: info.start, end: info.end, text: info.text, before: info.before, after: info.after }));
+      const data = await res.json().catch(() => null);
+      if (!res.ok || typeof data?.latex !== 'string') {
+        toast(data?.error ?? `Can't replace this (${res.status})`, 4000);
+        return;
+      }
+      latex = data.latex;
+    } catch {
+      toast('Replace: server unreachable');
+      return;
+    } finally {
+      setSelBusy(false);
+    }
+    if (state.sel !== info) return; // the selection moved on meanwhile
+  }
   setAskMode(true);
   selInputMode = kind;
   ui.selInput.placeholder = MARK_INPUT[kind].placeholder;
-  if (MARK_INPUT[kind].prefill) {
-    ui.selInput.value = info.text.replace(/\s+/g, ' ').trim();
+  if (latex !== null) {
+    ui.selInput.classList.add('latex');
+    ui.selInput.value = latex;
     ui.selInput.select();
     autoGrow(ui.selInput);
   }
@@ -1537,7 +1561,8 @@ async function markSelection(kind, input = '') {
   if (!info || selBusy) return;
   setSelBusy(true);
   try {
-    const res = await postJSON('/review/mark', withDoc({ page: info.page, start: info.start, end: info.end, text: info.text, before: info.before, after: info.after, kind, input }));
+    const latex = kind === 'replace'; // the box held the source's LaTeX (openMarkInput)
+    const res = await postJSON('/review/mark', withDoc({ page: info.page, start: info.start, end: info.end, text: info.text, before: info.before, after: info.after, kind, input, latex }));
     const data = await res.json().catch(() => null);
     if (!res.ok) {
       toast(data?.error ?? `Marking failed (${res.status})`, 4000);

@@ -685,6 +685,7 @@ body.diff-mode { --top: calc(var(--bar-h) + var(--diff-h)); }
   overflow-wrap: anywhere;
 }
 #sel-input:focus { border-color: var(--info); }
+#sel-input.latex { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
 
 /* ---------- dictation pill (same scroll space and look as the selection bar) ---------- */
 

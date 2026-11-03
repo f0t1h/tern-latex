@@ -341,6 +341,11 @@ Replace…, Insert…, Highlight, Comment…). The marks carry your id: `me = "A
 else the initials of your git `user.name`. Leave `me` out of a `ternlatex.toml` others share, so each
 person's marks carry their own initials.
 
+Replace… opens the passage's LaTeX source (`\Citet{knuth1984} designed`, not the PDF's "Knuth (1984)
+designed") for you to edit, and puts your edit in as LaTeX. What you type for Insert… and Comment… is
+plain text, its special characters escaped, unless it has a `\` or `$`. Citations and references inside
+struck text go in an `\mbox`, which ulem needs; accepting or rejecting the mark takes it out again.
+
 A comment goes in as `\comment[id=AK]{…}` right after the selected passage, so the passage keeps its line
 breaks. A highlight is a wavy underline in your colour, which breaks across lines (the changes package's
 default, a coloured box, can't). Selections go through macros: text your own macros typeset

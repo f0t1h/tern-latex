@@ -10,7 +10,7 @@ import { type Diagnostic, formatDiagnostic } from "./diagnostics.ts";
 import { SearchIndex } from "./search.ts";
 import { SyncTex } from "./synctex.ts";
 import { lineEndOffset, type LocatedRange, locateRange, locateSelection, type SelectionContext } from "./locate.ts";
-import { isMarkKind, markHunks } from "./marks.ts";
+import { isMarkKind, markHunks, replaceableSource } from "./marks.ts";
 import { changesLoaded, type Hunk, writeSuggestions } from "./proofread.ts";
 import type { OverleafSync } from "./overleaf.ts";
 import { offsetOf, type Position, positionOf, type RewriteRequest, type RewriteResult, widenToSentences } from "./rewrite.ts";
@@ -425,7 +425,7 @@ export async function startServer(o: ServerOptions): Promise<DevServer> {
           return send(res, 422, { error: "couldn't line the selection up with the source word for word (a figure's text, an algorithm, or text from two files?); select running text" });
         }
         const src = readFileSync(join(cfg.dir, loc.file), "utf8");
-        const hunks = markHunks(loc.file, src, loc.start, loc.end, kind, typeof input === "string" ? input : "");
+        const hunks = markHunks(loc.file, src, loc.start, loc.end, kind, typeof input === "string" ? input : "", body.latex === true);
         if (typeof hunks === "string") return send(res, 422, { error: hunks });
         if (hunks.some((h) => h.markup) && !changesLoaded(cfg, [loc.file])) {
           return send(res, 409, { error: "highlights and comments need the changes package: add \\usepackage{changes} to the preamble" });
@@ -435,6 +435,20 @@ export async function startServer(o: ServerOptions): Promise<DevServer> {
         if (r.reverted) return send(res, 409, { error: `not marked: ${r.reverted}` });
         if (r.hunks.length < hunks.length) return send(res, 409, { error: `${loc.file} changed meanwhile; select again` });
         return send(res, 200, { file: loc.file, line: hunks[0].line, author: me.id, pending: r.pending === true });
+      }
+      // The LaTeX behind a selection, for Replace… to edit instead of the PDF's text.
+      if (route === "POST /review/source") {
+        const { page, start, text } = body;
+        if (typeof page !== "number" || !isPoint(start) || typeof text !== "string") return send(res, 400, { error: "page, start {x,y} and text required" });
+        const loc = await selectionRange(doc, page, start, text, contextOf(body));
+        if (!loc) return send(res, 404, { error: "couldn't find that text in the source (a figure's text, an algorithm, or text from two files?)" });
+        if (!(loc.startExact && loc.endExact)) {
+          return send(res, 422, { error: "couldn't line the selection up with the source word for word (a figure's text, an algorithm, or text from two files?); select running text" });
+        }
+        const src = readFileSync(join(cfg.dir, loc.file), "utf8");
+        const r = replaceableSource(src, loc.start, loc.end);
+        if (typeof r === "string") return send(res, 422, { error: r });
+        return send(res, 200, { file: loc.file, line: src.slice(0, r.start).split("\n").length, latex: r.latex });
       }
       if (route === "POST /open") {
         const abs = inProject(body.file);
