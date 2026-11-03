@@ -136,6 +136,16 @@
           <button id="sel-comment" type="button" title="Highlight it with a comment you type (key C)">Comment…</button>
         </span>
       </div>
+      <div id="sel-fmt" role="toolbar" aria-label="LaTeX" hidden>
+        <button type="button" data-fmt="bold" title="Bold: \textbf{…}"><b>B</b></button>
+        <button type="button" data-fmt="emph" title="Emphasis: \emph{…}"><i>I</i></button>
+        <button type="button" data-fmt="mono" title="Monospace: \texttt{…}"><code>tt</code></button>
+        <button type="button" data-fmt="math" title="Inline math: $…$"><i>x</i>²</button>
+        <span class="fmt-sep" aria-hidden="true"></span>
+        <button type="button" data-fmt="itemize" title="Bulleted list: \begin{itemize}, each line an \item">• List</button>
+        <button type="button" data-fmt="enumerate" title="Numbered list: \begin{enumerate}, each line an \item">1. List</button>
+        <button type="button" data-fmt="footnote" title="Footnote: \footnote{…}">Footnote</button>
+      </div>
       <textarea id="sel-input" rows="1" hidden autocomplete="off" spellcheck="true"
         placeholder="Tell omp what to do with this passage" title="Enter sends, Shift+Enter starts a new line, Escape cancels"></textarea>
     </div>

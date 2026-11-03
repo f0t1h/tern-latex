@@ -648,7 +648,9 @@ body.diff-mode { --top: calc(var(--bar-h) + var(--diff-h)); }
   position: absolute;
   z-index: 10;
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
   padding: 3px;
   background: var(--panel-bg);
   color: var(--panel-fg);
@@ -686,6 +688,10 @@ body.diff-mode { --top: calc(var(--bar-h) + var(--diff-h)); }
 }
 #sel-input:focus { border-color: var(--info); }
 #sel-input.latex { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+#sel-fmt { display: flex; align-items: center; gap: 1px; }
+#sel-fmt button { padding: 2px 7px; font-size: 12px; line-height: 1.3; }
+#sel-fmt code { font-size: 11px; }
+#sel-fmt .fmt-sep { width: 1px; align-self: stretch; margin: 2px 4px; background: var(--bar-border); }
 
 /* ---------- dictation pill (same scroll space and look as the selection bar) ---------- */
 

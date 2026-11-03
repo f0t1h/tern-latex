@@ -342,9 +342,14 @@ else the initials of your git `user.name`. Leave `me` out of a `ternlatex.toml` 
 person's marks carry their own initials.
 
 Replace… opens the passage's LaTeX source (`\Citet{knuth1984} designed`, not the PDF's "Knuth (1984)
-designed") for you to edit, and puts your edit in as LaTeX. What you type for Insert… and Comment… is
-plain text, its special characters escaped, unless it has a `\` or `$`. Citations and references inside
-struck text go in an `\mbox`, which ulem needs; accepting or rejecting the mark takes it out again.
+designed") for you to edit, and puts your edit in as LaTeX. A toolbar above the box wraps the box's
+selection in bold, emphasis, monospace, inline math or a footnote (⌘B, ⌘I and ⌘⇧M work in the box too), or
+turns its lines into a bulleted or numbered list. `changes` commands can't hold a list or a footnote, so
+such a replacement goes in as the old text struck out, then the list (or footnote) with each item's text
+as your addition; rejecting it all restores the passage, emptied list included. What you type for Insert…
+and Comment… is plain text, its special characters escaped, unless it has a `\` or `$`. Citations and
+references inside struck text go in an `\mbox`, which ulem needs; accepting or rejecting the mark takes
+it out again.
 
 A comment goes in as `\comment[id=AK]{…}` right after the selected passage, so the passage keeps its line
 breaks. A highlight is a wavy underline in your colour, which breaks across lines (the changes package's

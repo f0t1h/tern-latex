@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { initials, renderReviewSetup, reviewer } from "../src/changes.ts";
+import { initials, parseSpans, renderReviewSetup, reviewer, rewrite } from "../src/changes.ts";
 import { type Config, loadConfig } from "../src/config.ts";
 import { locateSelection } from "../src/locate.ts";
 import { markHunks, replaceableSource } from "../src/marks.ts";
@@ -96,6 +96,20 @@ describe("review marks", () => {
     expect(mark(tex, "faster", "replace", "~2x")).toContain("\\replaced[id=AK]{\\textasciitilde{}2x}{faster}");
     expect(replaceableSource(tex, start, tex.indexOf("Next.") + 5)).toMatch(/can't span paragraphs/);
     expect(replaceableSource(tex, tex.indexOf("fig:a}"), tex.indexOf(" is"))).toMatch(/group/);
+  });
+
+  test("a list or footnote in new text goes in as tracked items around untracked scaffolding; rejecting restores the text", () => {
+    const tex = "Some old words here.\n";
+    const list = "\\begin{itemize}\n\\item one\n\\item two\n\\end{itemize}";
+    const out = mark(tex, "old words", "replace", list);
+    expect(out).toBe("Some \\deleted[id=AK]{old words}\\begin{itemize}\n\\item \\added[id=AK]{one}\n\\item \\added[id=AK]{two}\n\\end{itemize} here.\n");
+    expect(rewrite(out, parseSpans(out), "reject")).toBe(tex);
+    expect(rewrite(out, parseSpans(out), "accept")).toBe("Some \\begin{itemize}\n\\item one\n\\item two\n\\end{itemize} here.\n");
+    const noted = mark(tex, "words", "insert", "\\footnote{See \\emph{there}.}");
+    expect(noted).toBe("Some old words\\footnote{\\added[id=AK]{See \\emph{there}.}} here.\n");
+    expect(rewrite(noted, parseSpans(noted), "reject")).toBe(tex);
+    const at = tex.indexOf("words");
+    expect(markHunks("main.tex", tex, at, at + 5, "replace", "\\begin{equation}x\\end{equation}", true)).toMatch(/only lists .* and footnotes/);
   });
 });
 

@@ -81,8 +81,9 @@ export interface Hunk {
   /**
    * A mark that changes no text: `\highlight` of `old`, or a `\comment` with `why` at `start` (old and new empty).
    * A comment goes after the passage rather than around it: a long `\highlight` (a coloured box) can't break lines.
+   * `raw`: `new` goes in untracked, the scaffolding of a list or footnote around tracked text (marks.ts trackedPieces).
    */
-  markup?: "highlight" | "comment";
+  markup?: "highlight" | "comment" | "raw";
 }
 
 export interface Target {
@@ -286,6 +287,7 @@ export function hunksFor(p: Paragraph, s: Suggestion, spans: [number, number][])
  */
 export function applyHunks(text: string, hunks: Hunk[], direct: boolean, author: string): string {
   const edits = hunks.map((h, order) => {
+    if (h.markup === "raw") return { start: h.start, end: h.end, order, markup: h.new };
     const blocked = direct ? null : marginBlock(text, h.start);
     if (h.markup === "comment") {
       const at = blocked ? blocked.after : h.start;
@@ -430,8 +432,9 @@ export async function writeSuggestions(cfg: Config, hunks: Hunk[], snapshots: Ma
   const skipped: Record<string, number> = {};
   const paragraphBreak = hunks.some((h) => /\n[ \t]*\n/.test(h.new) || /\n[ \t]*\n/.test(h.old));
   if (!o.direct && (paragraphBreak || !changesLoaded(cfg, [...new Set(hunks.map((h) => h.file))]))) {
-    await addPending(cfg, hunks, snapshots, o.author);
-    return { hunks, skipped, pending: true };
+    const whole = joinPieces(hunks);
+    await addPending(cfg, whole, snapshots, o.author);
+    return { hunks: whole, skipped, pending: true };
   }
   await checkpoint(cfg, `before ${o.label}`);
   // A document already failing is blamed only for errors beyond the ones it had (a missing figure, say).
@@ -470,6 +473,22 @@ export async function writeSuggestions(cfg: Config, hunks: Hunk[], snapshots: Ma
     return { hunks: [], skipped, reverted: `${newlyBroken.map((s) => s.doc).join(", ")} ${what}${first ? ` (${first.message})` : ""}; edits reverted` };
   }
   return { hunks: applied, skipped };
+}
+
+/**
+ * Hunks with the pieces of one edit joined (a strike and the additions after it, around a list's scaffolding): a
+ * pending suggestion is plain text, so it needs no pieces.
+ */
+function joinPieces(hunks: Hunk[]): Hunk[] {
+  if (!hunks.some((h) => h.markup === "raw")) return hunks;
+  const out: Hunk[] = [];
+  for (const h of hunks) {
+    const prev = out.at(-1);
+    if (prev && prev.file === h.file && !h.old && h.markup !== "comment" && h.markup !== "highlight" && h.start === prev.end && !prev.markup) {
+      out[out.length - 1] = { ...prev, new: prev.new + h.new };
+    } else out.push(h.markup === "raw" ? { ...h, markup: undefined } : h);
+  }
+  return out;
 }
 
 /** Error counts of the documents whose last build (build/status.json) failed. */

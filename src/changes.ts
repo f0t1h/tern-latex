@@ -455,9 +455,18 @@ export function rewrite(text: string, targets: Span[], decision: "accept" | "rej
   return tidy(render(0, text.length));
 }
 
+/** A list whose items are all removed changes, or a footnote whose text is: what rejecting a tracked list leaves. */
+const EMPTIED = /\\begin\{(itemize|enumerate|description)\}(?:\[[^\]]*\])?(?:\s*\\item\b(?:\[[^\]]*\])?\s*\u0000+)+\s*\\end\{\1\}|\\footnote\s*(?:\[[^\]]*\])?\{\s*\u0000+\s*\}/g;
+
 /** Removes GONE markers without leaving double spaces, space before punctuation or emptied lines. */
-function tidy(text: string): string {
-  if (!text.includes(GONE)) return text;
+function tidy(input: string): string {
+  if (!input.includes(GONE)) return input;
+  // Collapse emptied lists and footnotes to one marker, so the line logic below treats them as removed markup.
+  let text = input;
+  for (let prev = ""; prev !== text; ) {
+    prev = text;
+    text = text.replace(EMPTIED, GONE);
+  }
   const lines = text.split("\n");
   const out: string[] = [];
   for (let k = 0; k < lines.length; k++) {

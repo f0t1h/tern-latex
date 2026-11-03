@@ -427,13 +427,13 @@ export async function startServer(o: ServerOptions): Promise<DevServer> {
         const src = readFileSync(join(cfg.dir, loc.file), "utf8");
         const hunks = markHunks(loc.file, src, loc.start, loc.end, kind, typeof input === "string" ? input : "", body.latex === true);
         if (typeof hunks === "string") return send(res, 422, { error: hunks });
-        if (hunks.some((h) => h.markup) && !changesLoaded(cfg, [loc.file])) {
+        if (hunks.some((h) => h.markup === "highlight" || h.markup === "comment") && !changesLoaded(cfg, [loc.file])) {
           return send(res, 409, { error: "highlights and comments need the changes package: add \\usepackage{changes} to the preamble" });
         }
         const me = o.review.me;
         const r = await writeSuggestions(cfg, hunks, new Map([[loc.file, src]]), { author: me.id, direct: false, build: () => builder.request(), label: `${kind} by ${me.id}` });
         if (r.reverted) return send(res, 409, { error: `not marked: ${r.reverted}` });
-        if (r.hunks.length < hunks.length) return send(res, 409, { error: `${loc.file} changed meanwhile; select again` });
+        if (!r.pending && r.hunks.length < hunks.length) return send(res, 409, { error: `${loc.file} changed meanwhile; select again` });
         return send(res, 200, { file: loc.file, line: hunks[0].line, author: me.id, pending: r.pending === true });
       }
       // The LaTeX behind a selection, for Replace… to edit instead of the PDF's text.

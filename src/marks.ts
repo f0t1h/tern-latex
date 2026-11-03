@@ -40,6 +40,72 @@ function unbalanced(slice: string): string | null {
   return null;
 }
 
+/** Lists whose items a tracked change can fill: the `changes` commands can't hold an environment or a footnote. */
+const LIST_ENV = /^(?:itemize|enumerate|description)$/;
+
+/** Whether new text holds what `changes` commands can't: an environment or a footnote (the build stops). */
+function structural(latex: string): boolean {
+  return /\\begin\s*\{|\\footnote\s*[[{]/.test(latex);
+}
+
+/**
+ * New text with lists or footnotes as pieces: the scaffolding (`\begin{itemize}`, `\item`, `\footnote{`, `}`) goes in
+ * as it is, the text in between as tracked additions, so each piece is markup `changes` can take. Rejecting the
+ * additions leaves an empty list or footnote, which resolving removes. A reason when it holds anything else.
+ */
+export function trackedPieces(latex: string): { text: string; raw: boolean }[] | string {
+  const out: { text: string; raw: boolean }[] = [];
+  const raw = (text: string) => text && out.push({ text, raw: true });
+  const prose = (text: string) => {
+    const lead = text.length - text.trimStart().length;
+    const body = text.trim();
+    raw(text.slice(0, lead));
+    if (body) out.push({ text: body, raw: false });
+    raw(text.slice(lead + body.length));
+  };
+  let run = 0;
+  let i = 0;
+  while (i < latex.length) {
+    const rest = latex.slice(i);
+    const env = /^\\(begin|end)\s*\{([^{}]*)\}/.exec(rest);
+    const item = /^\\item\b(?:\s*\[[^\]]*\])?/.exec(rest);
+    const note = /^\\footnote\s*(?:\[[^\]]*\])?\s*(?=\{)/.exec(rest);
+    if (env && !LIST_ENV.test(env[2])) return `\\${env[1]}{${env[2]}} can't go into a tracked change; only lists (itemize, enumerate, description) and footnotes can`;
+    const head = env ?? item ?? note;
+    if (!head) {
+      i += latex[i] === "\\" ? 2 : 1;
+      continue;
+    }
+    prose(latex.slice(run, i));
+    let token = head[0];
+    // A list's optional argument (enumitem's [label=…]) belongs to its \begin.
+    if (env?.[1] === "begin") token += /^\s*\[[^\]]*\]/.exec(latex.slice(i + token.length))?.[0] ?? "";
+    raw(token);
+    i += token.length;
+    if (note) {
+      const close = groupEnd(latex, i);
+      const inner = trackedPieces(latex.slice(i + 1, close - 1));
+      if (typeof inner === "string") return inner;
+      raw("{");
+      out.push(...inner);
+      raw("}");
+      i = close;
+    }
+    run = i;
+  }
+  prose(latex.slice(run));
+  return out;
+}
+
+/** Hunks putting LATEX in at offset AT: one plain addition, else trackedPieces. */
+function additions(file: string, src: string, at: number, latex: string): Hunk[] | string {
+  const line = lineAt(src, at);
+  if (!structural(latex)) return [{ file, start: at, end: at, old: "", new: latex, why: "", line }];
+  const pieces = trackedPieces(latex);
+  if (typeof pieces === "string") return pieces;
+  return pieces.map((p) => ({ file, start: at, end: at, old: "", new: p.text, why: "", line, ...(p.raw ? { markup: "raw" as const } : {}) }));
+}
+
 /** SRC[START, END) cut at blank lines into its paragraphs' text, each without surrounding whitespace. */
 function paragraphsIn(src: string, start: number, end: number): { start: number; end: number }[] {
   const out: { start: number; end: number }[] = [];
@@ -71,9 +137,8 @@ export function markHunks(file: string, src: string, start: number, end: number,
   const typed = latex ? text.trim() : typedLatex(text);
   if ((kind === "replace" || kind === "insert" || kind === "comment") && !typed) return `type the ${kind === "comment" ? "comment" : "new text"} first`;
   if (kind === "insert") {
-    // After the selection, with the space a word needs unless it starts with punctuation.
-    const added = /^[\s.,;:!?)\]]/.test(typed) ? typed : ` ${typed}`;
-    return [{ file, start: end, end, old: "", new: added, why: "", line: lineAt(src, end) }];
+    // After the selection, with the space a word needs unless it starts with punctuation or is a footnote.
+    return additions(file, src, end, /^(?:[\s.,;:!?)\]]|\\footnote\b)/.test(typed) ? typed : ` ${typed}`);
   }
   if (kind === "comment") {
     // After the passage: wrapping it (\highlight with a comment) would box it on one line, past the margin.
@@ -98,7 +163,13 @@ export function markHunks(file: string, src: string, start: number, end: number,
     if (kind === "delete") hunks.push({ file, start: p.start, end: p.end, old, new: "", why: "", line });
     else if (kind === "replace") {
       if (typed === old) return "the new text is the same as the old";
-      hunks.push({ file, start: p.start, end: p.end, old, new: typed, why: "", line });
+      if (!structural(typed)) hunks.push({ file, start: p.start, end: p.end, old, new: typed, why: "", line });
+      else {
+        // A list or footnote can't go inside \replaced: strike the old text, then add the new after it.
+        const added = additions(file, src, p.end, typed);
+        if (typeof added === "string") return added;
+        hunks.push({ file, start: p.start, end: p.end, old, new: "", why: "", line }, ...added);
+      }
     } else {
       // A highlight goes around them: one per stretch of text between.
       let at = 0;

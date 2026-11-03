@@ -76,6 +76,7 @@ const ui = {
   selHighlight: $('sel-highlight'),
   selComment: $('sel-comment'),
   selInput: $('sel-input'),
+  selFmt: $('sel-fmt'),
   dictatePill: $('dictate-pill'),
   dictateTime: $('dictate-time'),
   dictateLevel: $('dictate-level'),
@@ -1383,12 +1384,55 @@ const MARK_INPUT = {
 function setAskMode(on) {
   ui.selActions.hidden = on;
   ui.selInput.hidden = !on;
+  ui.selFmt.hidden = true;
   ui.selInput.classList.remove('latex');
   if (on) {
     ui.selInput.value = '';
     ui.selInput.focus({ preventScroll: true });
     autoGrow(ui.selInput);
   } else selInputMode = 'ask';
+}
+
+/** LaTeX the toolbar above the Replace… box puts around the box's selection: [before, after]. */
+const FMT_WRAP = {
+  bold: ['\\textbf{', '}'],
+  emph: ['\\emph{', '}'],
+  mono: ['\\texttt{', '}'],
+  math: ['$', '$'],
+  footnote: ['\\footnote{', '}'],
+};
+
+/**
+ * Applies toolbar format KIND to the box's selection: wraps it in a command, or makes a list of its lines (one
+ * empty \item without a selection). The selection ends up on the wrapped text, else the caret where to type.
+ */
+function applyFormat(kind) {
+  const box = ui.selInput;
+  const s = box.selectionStart;
+  const e = box.selectionEnd;
+  const picked = box.value.slice(s, e);
+  let text;
+  let from;
+  let to;
+  if (FMT_WRAP[kind]) {
+    const [open, close] = FMT_WRAP[kind];
+    text = open + picked + close;
+    from = s + open.length;
+    to = from + picked.length;
+  } else {
+    const lines = picked.split('\n').map((l) => l.trim()).filter(Boolean);
+    const head = `\\begin{${kind}}\n  \\item `;
+    text = `${head}${(lines.length ? lines : ['']).join('\n  \\item ')}\n\\end{${kind}}`;
+    from = s + head.length;
+    to = lines.length ? s + text.length : from;
+  }
+  box.focus({ preventScroll: true });
+  box.setSelectionRange(s, e);
+  // insertText keeps the box's undo history; setRangeText where it isn't supported.
+  if (!document.execCommand('insertText', false, text)) box.setRangeText(text, s, e, 'end');
+  box.setSelectionRange(from, to);
+  autoGrow(box);
+  anchorSelBar();
 }
 
 function openAsk() {
@@ -1426,6 +1470,7 @@ async function openMarkInput(kind) {
   selInputMode = kind;
   ui.selInput.placeholder = MARK_INPUT[kind].placeholder;
   if (latex !== null) {
+    ui.selFmt.hidden = false;
     ui.selInput.classList.add('latex');
     ui.selInput.value = latex;
     ui.selInput.select();
@@ -3826,9 +3871,30 @@ ui.selInput.addEventListener('input', () => {
   autoGrow(ui.selInput);
   anchorSelBar(); // grows upward, clear of the selection
 });
+for (const [fmt, key] of [['bold', 'B'], ['emph', 'I'], ['math', IS_MAC ? '⇧M' : 'Shift+M']]) {
+  const b = ui.selFmt.querySelector(`[data-fmt="${fmt}"]`);
+  if (b) b.title += ` (${MOD}${key})`;
+}
+ui.selFmt.addEventListener('click', (e) => {
+  const b = e.target instanceof Element ? e.target.closest('button[data-fmt]') : null;
+  if (b instanceof HTMLButtonElement && b.dataset.fmt) applyFormat(b.dataset.fmt);
+});
+/** The box's format keys while the toolbar shows: ⌘B bold, ⌘I emphasis, ⌘⇧M math (Ctrl elsewhere). */
+function formatKey(e) {
+  if (ui.selFmt.hidden || e.altKey || !(IS_MAC ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey)) return null;
+  const k = e.key.toLowerCase();
+  if (k === 'b' && !e.shiftKey) return 'bold';
+  if (k === 'i' && !e.shiftKey) return 'emph';
+  if (k === 'm' && e.shiftKey) return 'math';
+  return null;
+}
 ui.selInput.addEventListener('keydown', (e) => {
   e.stopPropagation(); // keep global shortcuts (Escape, zoom) out of the input
-  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+  const fmt = formatKey(e);
+  if (fmt) {
+    e.preventDefault();
+    applyFormat(fmt);
+  } else if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
     e.preventDefault();
     const text = ui.selInput.value.trim();
     if (!text) return;
