@@ -1386,6 +1386,7 @@ function setAskMode(on) {
   if (on) {
     ui.selInput.value = '';
     ui.selInput.focus({ preventScroll: true });
+    autoGrow(ui.selInput);
   } else selInputMode = 'ask';
 }
 
@@ -1404,6 +1405,7 @@ function openMarkInput(kind) {
   if (MARK_INPUT[kind].prefill) {
     ui.selInput.value = info.text.replace(/\s+/g, ' ').trim();
     ui.selInput.select();
+    autoGrow(ui.selInput);
   }
   anchorSelBar();
 }
@@ -3795,9 +3797,13 @@ ui.dictatePill.addEventListener('mousedown', (e) => {
 ui.dictateDone.addEventListener('click', finishDictation);
 ui.dictateCancel.addEventListener('click', cancelDictation);
 ui.selSource.title = `Show the source of this passage in the editor (${MOD}click does this for any spot)`;
+ui.selInput.addEventListener('input', () => {
+  autoGrow(ui.selInput);
+  anchorSelBar(); // grows upward, clear of the selection
+});
 ui.selInput.addEventListener('keydown', (e) => {
   e.stopPropagation(); // keep global shortcuts (Escape, zoom) out of the input
-  if (e.key === 'Enter' && !e.isComposing) {
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
     e.preventDefault();
     const text = ui.selInput.value.trim();
     if (!text) return;

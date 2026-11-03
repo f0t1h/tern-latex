@@ -665,8 +665,9 @@ body.diff-mode { --top: calc(var(--bar-h) + var(--diff-h)); }
 #sel-review { display: flex; gap: 1px; margin-left: 4px; padding-left: 4px; border-left: 1px solid var(--bar-border); }
 #sel-review:first-child { margin-left: 0; padding-left: 0; border-left: 0; }
 #sel-input {
-  width: 320px;
+  width: min(480px, 70vw);
   font: inherit;
+  line-height: 1.4;
   color: inherit;
   background: transparent;
   border: 1px solid var(--bar-border);
@@ -675,6 +676,13 @@ body.diff-mode { --top: calc(var(--bar-h) + var(--diff-h)); }
   outline: none;
   user-select: text;
   -webkit-user-select: text;
+  resize: none;
+  /* One line to start; grows with the text (autoGrow) up to about eight lines, then scrolls. */
+  min-height: calc(1.4em + 8px);
+  max-height: calc(8 * 1.4em + 8px);
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 #sel-input:focus { border-color: var(--info); }
 
