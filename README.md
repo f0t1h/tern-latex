@@ -71,7 +71,9 @@ differ.
 
 - Required: [Bun](https://bun.sh) 1.4.2 or newer, and git.
 - Optional: omp (the writing assistant, proofreading, rewrites, dictation); Tern (any browser works as
-  the viewer); perl, for redlines (macOS and most Linux distributions ship it); chktex and latexmk.
+  the viewer); perl, for redlines (macOS and most Linux distributions ship it); chktex; a TeX distribution
+  (TinyTeX, TeX Live, MacTeX, MiKTeX) for documents built with pdfLaTeX, XeLaTeX or LuaLaTeX (see
+  [Engines](#engines)).
 - macOS, Linux and Windows. Windows is supported, but less tested than macOS and Linux.
 
 ### Uninstall
@@ -126,7 +128,7 @@ Adopting a repository that already has commits changes nothing in it. ternlatex'
 `.git/info/exclude`, not in `.gitignore`, so they stay untracked and are never committed or pushed, and
 `git status` stays clean. Save checkpoints live on their own ref, which `git push` leaves behind. Overleaf
 compiles with pdfLaTeX by default and ternlatex with Tectonic (XeLaTeX); if the document needs pdfLaTeX,
-set `engine = "latexmk"` and `latexmk_args = ["-pdf"]` to use your own TeX Live.
+set `engine = "pdflatex"` (see [Engines](#engines)).
 
 Co-authors keep editing in Overleaf, so ternlatex keeps the clone on Overleaf's latest. While `dev` runs it
 fetches every minute and rebases the clone onto Overleaf's new commits: your commits on top, uncommitted
@@ -530,8 +532,8 @@ are examples.
 ```toml
 root = "main.tex"        # or [[documents]] tables, see "Several documents"
 outdir = "build"
-engine = "tectonic"      # or "latexmk": uses your own TeX installation, for shell-escape or biber
-latexmk_args = ["-xelatex"]   # used with engine = "latexmk"
+engine = "tectonic"      # or "pdflatex", "xelatex", "lualatex": see "Engines"
+# latexmk_args = ["-shell-escape"]   # extra latexmk options for those engines
 bundle = "https://data1b.fullyjustified.net/tlextras-2022.0r0.tar"
 # port = 4820            # default: a fixed port per project
 # ignore = ["data/raw"]  # paths the watcher ignores
@@ -599,13 +601,41 @@ The cache defaults to `~/Library/Caches/ternlatex` on macOS, `$XDG_CACHE_HOME/te
 
 The tools are `tectonic`, `pandoc`, `latexdiff`, `perl`, `git`, `chktex`, `latexmk`, `omp` and `tern`.
 For each, ternlatex uses the first it finds of: `TERNLATEX_<NAME>`, the project's `[tools]` table, your
-`PATH`, and, for tectonic, pandoc and latexdiff, its pinned download. `ternlatex doctor` shows where each
-tool came from.
+`PATH`, and, for tectonic, pandoc and latexdiff, its pinned download; latexmk and chktex also where TeX
+installers put them (see [Engines](#engines)). `ternlatex doctor` shows where each tool came from.
 
-## Tectonic limits
+## Engines
 
-- No shell-escape: `minted` and `\write18` don't work. Use `listings`, or `engine = "latexmk"`.
-- No biber: use natbib with bibtex, or `\usepackage[backend=bibtex]{biblatex}`.
+Tectonic (XeTeX) builds by default. ternlatex downloads it and it fetches the TeX packages a document
+uses, so nothing else needs installing. A document that needs another engine (one written for pdfLaTeX,
+as most Overleaf projects are, or one using shell-escape or biber) names it:
+
+```toml
+engine = "pdflatex"      # every document: "pdflatex", "xelatex" or "lualatex"
+
+[[documents]]
+root = "slides.tex"
+engine = "xelatex"       # this document only
+```
+
+These run through latexmk from an installed TeX distribution, found on `PATH` or where its installer puts
+it: TinyTeX (`~/Library/TinyTeX`, `~/.TinyTeX`, `%APPDATA%\TinyTeX`), MacTeX (`/Library/TeX/texbin`), TeX
+Live (`/usr/local/texlive`, `/opt/texlive`, `C:\texlive`) and MiKTeX. `ternlatex doctor` lists the engines
+it found. There is no fallback: a document whose engine is missing fails with how to install it.
+
+- The smallest install is [TinyTeX](https://yihui.org/tinytex/). With TinyTeX a package the document
+  lacks is installed (`tlmgr`) during the build; MiKTeX installs them on first use; with TeX Live and
+  MacTeX the build names the missing files and how to install them.
+- pdfLaTeX builds load `cmap`, so the PDF's text keeps ligatures and accents (search, selection).
+- The templates' house style works with every engine: Libertinus and Fira Mono as OpenType fonts, or
+  as Type 1 fonts under pdfLaTeX.
+- latexmk reruns only what changed; the one-pass fast path (see above) is Tectonic's.
+
+### Tectonic limits
+
+- No shell-escape: `minted` and `\write18` don't work. Use `listings`, or another engine with
+  `latexmk_args = ["-shell-escape"]`.
+- No biber: use natbib with bibtex, `\usepackage[backend=bibtex]{biblatex}`, or another engine.
 - System fonts work but tie the build to your machine. Prefer bundle fonts (Libertinus, TeX Gyre, Latin
   Modern, Fira) or fonts committed under `fonts/` (`fontspec` with `Path=fonts/`).
 

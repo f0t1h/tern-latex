@@ -95,8 +95,9 @@ export async function dev(target: string, o: DevOptions): Promise<number> {
     title.update(builder.all(), s);
   });
   builder.watch();
-  const docs = cfg.docs.map((d) => (d.name === d.root.replace(/\.tex$/, "") ? d.root : `${d.name} (${d.root})`)).join(", ");
-  console.log(`ternlatex dev: ${docs} (${cfg.engine}) → ${server.url}\nwatching ${cfg.dir}; Ctrl-C to stop`);
+  const mixed = new Set(cfg.docs.map((d) => d.engine)).size > 1;
+  const docs = cfg.docs.map((d) => `${d.name === d.root.replace(/\.tex$/, "") ? d.root : `${d.name} (${d.root})`}${mixed ? ` [${d.engine}]` : ""}`).join(", ");
+  console.log(`ternlatex dev: ${docs}${mixed ? "" : ` (${cfg.docs[0].engine})`} → ${server.url}\nwatching ${cfg.dir}; Ctrl-C to stop`);
   if (keys) console.log(`Tern keys: ${keys.map((k) => `${k.display} ${k.title}`).join(" · ")}`);
   if (overleaf) {
     let problem: string | undefined;

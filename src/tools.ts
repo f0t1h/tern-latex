@@ -1,8 +1,8 @@
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, readlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, delimiter, join, resolve } from "node:path";
-import type { Config } from "./config.ts";
+import { basename, delimiter, dirname, join, resolve } from "node:path";
+import type { Config, EngineName } from "./config.ts";
 import { type ArchiveKind, install } from "./download.ts";
 
 export type ToolName = "tectonic" | "pandoc" | "latexdiff" | "perl" | "git" | "chktex" | "latexmk" | "omp" | "tern";
@@ -83,6 +83,12 @@ export const MANAGED: Partial<Record<ToolName, Managed>> = {
 
 const WARM = "run `ternlatex doctor --warm`";
 
+/** How to get a TeX distribution with latexmk and the TeX engines. */
+export const TEX_INSTALL =
+  process.platform === "win32"
+    ? "install TinyTeX (https://yihui.org/tinytex/), MiKTeX or TeX Live"
+    : `install TinyTeX (curl -sL https://yihui.org/tinytex/install-bin-unix.sh | sh)${process.platform === "darwin" ? ", MacTeX" : ""} or TeX Live`;
+
 /** How to get each tool, before "put it on PATH, or set …". */
 const INSTALL: Record<ToolName, string> = {
   tectonic: WARM,
@@ -91,7 +97,7 @@ const INSTALL: Record<ToolName, string> = {
   perl: "install Perl",
   git: "install git",
   chktex: "install chktex (part of TeX Live)",
-  latexmk: 'install TeX Live with latexmk (or set engine = "tectonic")',
+  latexmk: `${TEX_INSTALL} (or set engine = "tectonic")`,
   omp: "install omp",
   tern: "run inside Tern, or install the Tern CLI",
 };
@@ -159,6 +165,54 @@ export function initToolEnv(): void {
   if (extra.length) process.env.PATH = [...have, ...extra].join(delimiter);
 }
 
+/** Tools a TeX distribution brings: looked for in its bin directory when they are not on PATH. */
+const TEX_TOOLS: Partial<Record<ToolName, true>> = { latexmk: true, chktex: true };
+
+/**
+ * Bin directories of TeX distributions installed where they usually go, newest first: TinyTeX (installs without
+ * admin rights, so often off PATH), MacTeX's texbin, TeX Live's yearly trees, MiKTeX.
+ */
+export function texBinDirs(): string[] {
+  const home = homedir();
+  const sub = (dir: string) => (existsSync(dir) ? readdirSync(dir).sort().reverse().map((d) => join(dir, d)) : []);
+  // <root>/<year>/bin/<arch>: newest year first.
+  const yearly = (root: string) => sub(root).filter((d) => /\d{4}$/.test(d)).flatMap((y) => sub(join(y, "bin")));
+  const dirs =
+    process.platform === "win32"
+      ? [
+          ...sub(join(process.env.APPDATA || join(home, "AppData", "Roaming"), "TinyTeX", "bin")),
+          ...yearly("C:\\texlive"),
+          join(process.env.LOCALAPPDATA || join(home, "AppData", "Local"), "Programs", "MiKTeX", "miktex", "bin", "x64"),
+          "C:\\Program Files\\MiKTeX\\miktex\\bin\\x64",
+        ]
+      : [
+          ...sub(join(home, process.platform === "darwin" ? "Library/TinyTeX" : ".TinyTeX", "bin")),
+          ...(process.platform === "darwin" ? ["/Library/TeX/texbin"] : []),
+          ...yearly("/usr/local/texlive"),
+          ...yearly("/opt/texlive"),
+        ];
+  return dirs.filter((d) => existsSync(d));
+}
+
+/** A TeX engine run by latexmk: latexmk's command, and the bin directory the engine and its tools come from. */
+export interface TexEngine {
+  latexmk: string[];
+  /** Put first on the run's PATH, so latexmk finds the engine (and BibTeX, xdvipdfmx) of the same distribution. */
+  binDir: string;
+  /** tlmgr of a TinyTeX, which installs packages without admin rights; absent elsewhere. */
+  tlmgr?: string;
+}
+
+/** latexmk and ENGINE from one distribution (see resolveTool for latexmk), else a ToolMissingError saying what to install. */
+export async function resolveTexEngine(engine: Exclude<EngineName, "tectonic">, cfg?: Config): Promise<TexEngine> {
+  const latexmk = await resolveTool("latexmk", cfg);
+  const binDir = dirname(latexmk.command[latexmk.command.length - 1]);
+  const bin = Bun.which(engine, { PATH: [binDir, process.env.PATH ?? ""].join(delimiter) });
+  if (!bin) throw new ToolMissingError("latexmk", `${TEX_INSTALL}; latexmk is at ${binDir}, but ${engine} is not`, `${engine} not found`);
+  const tlmgr = Bun.which("tlmgr", { PATH: binDir });
+  return { latexmk: latexmk.command, binDir, ...(tlmgr && /TinyTeX/i.test(tlmgr) ? { tlmgr } : {}) };
+}
+
 /** Bun.which against the current PATH (by default it keeps the PATH the process started with). */
 export function which(command: string): string | null {
   return Bun.which(command, { PATH: process.env.PATH ?? "" });
@@ -200,6 +254,12 @@ async function find(name: ToolName, cfg: Config | undefined, download: boolean):
   }
   const onPath = which(name);
   if (onPath) return { name, command: [onPath], source: "path" };
+  if (TEX_TOOLS[name]) {
+    for (const dir of texBinDirs()) {
+      const bin = Bun.which(name, { PATH: dir });
+      if (bin) return { name, command: [bin], source: "path" };
+    }
+  }
   const m = MANAGED[name];
   if (m) {
     const platform = `${process.platform}-${process.arch}`;

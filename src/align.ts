@@ -18,14 +18,26 @@ export interface Token {
   end: number;
 }
 
-/** Words as compared: compatibility forms split, accents and case dropped. */
+/**
+ * Accents as pdfLaTeX's classic (OT1) fonts leave them in a PDF's text: a spacing mark before its letter, "caf´e",
+ * "Karao˘glano˘glu", "na¨ıve". A word goes on through them.
+ */
+export const SPACING_ACCENTS = "\u00B4\u0060\u02C6\u02DC\u00A8\u02D8\u02C7\u02D9\u02DA\u00B8\u02DB\u00AF\u02DD";
+const BEFORE_LETTER = new RegExp(`[${SPACING_ACCENTS}](?=\\p{L})`, "gu");
+
+/** PDF text with spacing accents before letters dropped: "caf´e" reads "cafe", as the folded source does. */
+export function dropSpacingAccents(s: string): string {
+  return s.replace(BEFORE_LETTER, "");
+}
+
+/** Words as compared: compatibility forms split, accents and case dropped, a dotless ı (an accented i in OT1) an i. */
 export function foldWord(w: string): string {
-  return w.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase();
+  return w.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase().replace(/ı/g, "i");
 }
 
 /** The words of PDF text, folded. */
 export function pdfWords(s: string): string[] {
-  return (s.normalize("NFKC").replace(/\u00ad/g, "").match(/[\p{L}\p{N}]+/gu) ?? []).map(foldWord);
+  return (dropSpacingAccents(s).normalize("NFKC").replace(/\u00ad/g, "").match(/[\p{L}\p{N}]+/gu) ?? []).map(foldWord);
 }
 
 /** Commands whose output isn't their argument's text: a citation, a cross-reference, a URL, a unit. */

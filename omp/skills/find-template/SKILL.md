@@ -106,7 +106,9 @@ Copy into the project root only what the build needs: `.cls`, `.sty`, `.bst`, `.
 Do not copy the kit's compiled PDFs or the `.dtx` sources.
 Kits sometimes ship their own copy of a common package (ICML ships `fancyhdr.sty`, `algorithm.sty`); keep it, since the venue expects that version.
 
-## 4. Adapt for Tectonic (XeTeX)
+## 4. Adapt for the engine
+
+Check the document's engine first (`ternlatex docs`). With `pdflatex` (most venue kits are written for it) keep the kit's preamble as it is: the checklist below is for Tectonic (the default) and only its citation, `.bst` and fonts items apply. With `xelatex` or `lualatex` the fonts and pdfTeX-only items apply; biber and (with `latexmk_args = ["-shell-escape"]`) shell escape work.
 
 Go through this checklist for the template and for the user's preamble:
 
@@ -116,7 +118,7 @@ Go through this checklist for the template and for the user's preamble:
 - **pdfTeX-only code**: `\pdfoutput=1` (arXiv) is harmless. `\usepackage[utf8]{inputenc}` only warns "inputenc package ignored with utf8 based engines"; that is harmless and can be removed. `\usepackage[T1]{fontenc}` works. `\pdfminorversion=7` and `\pdfoptionpdfminorversion` are **errors** (Undefined control sequence): delete them. `[pdftex]` driver options (`graphicx`, `hyperref`, `color`): drop the option.
 - **Fonts**: keep the class's own fonts. Do not add `fontspec`, `unicode-math` or the house fonts. Times-based classes (IEEEtran, NeurIPS's `\rmdefault{ptm}`, `\usepackage{times}`, elsarticle `times`) work through their Type 1 fonts. `\usepackage{newtxtext,newtxmath}` works if the venue asks for newtx. acmart's Libertine fonts are in the bundle.
 - **`.bst` presence**: run `ternlatex bundle <name>.bst` for the `\bibliographystyle` the template uses; vendor it from the kit if it is missing.
-- **Font checks at camera-ready**: XeTeX output goes through xdvipdfmx, which embeds Type 1 fonts as CFF (`/Type1C`, `/CIDFontType0`) rather than as classic Type 1 font files. Font checkers such as IEEE PDF eXpress, ACM TAPS or some journal portals may reject that. Run the venue's checker on a draft early. If it fails, the escape hatch is `engine = "latexmk"` in `ternlatex.toml` with `latexmk_args = ["-pdf"]` (pdfLaTeX). The latexmk default is `-xelatex`, which has the same font issue. This needs a host TeX Live install and is not reproducible, and the house style's `fontspec` cannot load under pdfLaTeX. Tell the user before switching.
+- **Font checks at camera-ready**: XeTeX output goes through xdvipdfmx, which embeds Type 1 fonts as CFF (`/Type1C`, `/CIDFontType0`) rather than as classic Type 1 font files. Font checkers such as IEEE PDF eXpress, ACM TAPS or some journal portals may reject that. Run the venue's checker on a draft early. If it fails, the fix is `engine = "pdflatex"` in `ternlatex.toml`, which needs an installed TeX distribution (`ternlatex doctor` lists the engines found; TinyTeX is the smallest). Tell the user before switching.
 - **Harmless warnings that come from the kit itself** do not need fixing: `Invalid UTF-8 byte or sequence at line 296` from the bundle's `lineno.sty` (loaded by the NeurIPS/ACL styles), and hyperref "Token not allowed in a PDF string" in the sample's title. Do not fix them by editing vendored files.
 
 ## 5. Install into the project
@@ -145,4 +147,4 @@ Tell the user:
 - the licence (or "no licence stated; distributed by <venue> for author use");
 - the options you chose and why (review/anonymous/final, paper size);
 - every compatibility edit: removed or replaced packages, citation command rewrites, pdfTeX lines dropped, house-style macros you redefined;
-- the remaining risks: the camera-ready font check (CFF-embedded fonts from XeTeX, and the `engine = "latexmk"` escape hatch), a bundle class older than the venue's current one, a year-specific kit that must be refreshed for next year, and page-limit overflow after the switch.
+- the remaining risks: the camera-ready font check (CFF-embedded fonts from XeTeX, and `engine = "pdflatex"` as the fix), a bundle class older than the venue's current one, a year-specific kit that must be refreshed for next year, and page-limit overflow after the switch.

@@ -101,7 +101,7 @@ export function entries(cfg: Config, doc: DocConfig): CacheEntry[] {
 /** The most recent entry whose every input has the same content now, if any. */
 export function find(cfg: Config, doc: DocConfig, sums: Checksums): CacheEntry | null {
   for (const e of entries(cfg, doc)) {
-    if (e.version !== version || e.engine !== cfg.engine) continue;
+    if (e.version !== version || e.engine !== doc.engine) continue;
     if (Object.entries(e.files).every(([rel, sum]) => typeof sum === "string" && sums.of(rel) === sum)) return e;
   }
   return null;
@@ -127,9 +127,9 @@ export async function store(
     const sum = sums.of(rel);
     if (sum !== null) files[rel] = sum;
   }
-  const key = Bun.hash(JSON.stringify([version, cfg.engine, files])).toString(16);
+  const key = Bun.hash(JSON.stringify([version, doc.engine, files])).toString(16);
   const entry: CacheEntry = {
-    key, version, engine: cfg.engine, files, deps: build.deps, diagnostics: build.diagnostics, durationMs: build.durationMs,
+    key, version, engine: doc.engine, files, deps: build.deps, diagnostics: build.diagnostics, durationMs: build.durationMs,
     finishedAt: new Date().toISOString(), usedAt: stamp(),
   };
   const root = cacheDir(cfg, doc);

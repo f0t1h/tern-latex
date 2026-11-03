@@ -21,9 +21,9 @@ const PANDOC_INPUT: Record<string, string> = {
 
 /** Constructs Tectonic cannot run, with the way out. */
 const INCOMPATIBLE: [RegExp, string][] = [
-  [/\\usepackage(\[[^\]]*\])?\{minted\}/, "uses minted, which needs shell-escape: switch to listings, or set engine = \"latexmk\""],
-  [/\\write18|\\immediate\\write18|\\ShellEscape/, "runs shell commands (\\write18): needs engine = \"latexmk\" with shell-escape"],
-  [/\\usepackage(\[(?![^\]]*backend=bibtex)[^\]]*\])?\{biblatex\}/, "uses biblatex with biber, which Tectonic lacks: add backend=bibtex, or move to natbib"],
+  [/\\usepackage(\[[^\]]*\])?\{minted\}/, "uses minted, which needs shell-escape: switch to listings, or set engine = \"pdflatex\" (or xelatex, lualatex) with latexmk_args = [\"-shell-escape\"]"],
+  [/\\write18|\\immediate\\write18|\\ShellEscape/, "runs shell commands (\\write18): needs engine = \"pdflatex\" (or xelatex, lualatex) with latexmk_args = [\"-shell-escape\"]"],
+  [/\\usepackage(\[(?![^\]]*backend=bibtex)[^\]]*\])?\{biblatex\}/, "uses biblatex with biber, which Tectonic lacks: add backend=bibtex, move to natbib, or set engine = \"pdflatex\""],
   [/\\usepackage(\[[^\]]*\])?\{(inputenc|fontenc)\}/, "loads inputenc/fontenc (pdfLaTeX-era); harmless under XeTeX, but fontspec handles fonts"],
 ];
 

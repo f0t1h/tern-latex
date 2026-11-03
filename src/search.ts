@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
+import { dropSpacingAccents, SPACING_ACCENTS } from "./align.ts";
 import { type Config, type DocConfig, docPaths, posix } from "./config.ts";
 import { docTexFiles } from "./locate.ts";
 import { maskSource } from "./outline.ts";
@@ -55,7 +56,7 @@ const FOLDED: Record<string, string> = { ß: "ss", æ: "ae", œ: "oe", ø: "o", 
 
 /** A word as search compares it: compatibility forms (ligatures) split, accents and case dropped. */
 export function fold(word: string): string {
-  return word
+  return dropSpacingAccents(word)
     .normalize("NFKD")
     .replace(/\p{M}/gu, "")
     .toLowerCase()
@@ -108,14 +109,13 @@ function mathKey(name: string): string {
 
 const SYMBOL_CHARS = Object.keys(MATH_SYMBOLS).join("");
 const GREEK_CHARS = "\\u0370-\\u03FF\\u{1D6A8}-\\u{1D7CB}";
+/** One letter or digit of a word, with the spacing accent pdfLaTeX's OT1 fonts put before it ("caf´e"). */
+const WORD_CHAR = `[${SPACING_ACCENTS}]*(?:(?![${GREEK_CHARS}])[\\p{L}\\p{N}])`;
 /**
  * What search compares: a math command (`\sum`, in the query and the source's math), a math symbol or Greek
  * letter (one character each), or a word (letters and digits; Greek letters stand alone, as in math).
  */
-const TOKEN = new RegExp(
-  `\\\\[A-Za-z]+|[${SYMBOL_CHARS}${GREEK_CHARS}]|(?:(?![${GREEK_CHARS}])[\\p{L}\\p{N}])+(?:['’](?:(?![${GREEK_CHARS}])[\\p{L}\\p{N}])+)*`,
-  "gu",
-);
+const TOKEN = new RegExp(`\\\\[A-Za-z]+|[${SYMBOL_CHARS}${GREEK_CHARS}]|(?:${WORD_CHAR})+(?:['’](?:${WORD_CHAR})+)*`, "gu");
 
 /** A token's key: math commands, symbols and Greek letters as `\name`, words folded. */
 export function tokenKey(token: string): string {

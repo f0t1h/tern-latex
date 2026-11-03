@@ -16,47 +16,59 @@
 \@ifundefined{c@figure}{\tl@floatsfalse}{\tl@floatstrue}
 
 % ---------------------------------------------------------------------------
-% Fonts: Libertinus (text + math), Fira Mono (code). All ship in the bundle.
-% To swap, change the file stems below (e.g. TeX Gyre: texgyrepagella-regular.otf),
-% or put fonts in fonts/ and add Path=fonts/ to the option list.
+% Fonts: Libertinus (text + math), Fira Mono (code). XeLaTeX and LuaLaTeX (and
+% Tectonic) load the OpenType files, which ship in the bundle; to swap, change the
+% file stems below (e.g. TeX Gyre: texgyrepagella-regular.otf), or put fonts in
+% fonts/ and add Path=fonts/ to the option list. pdfLaTeX (engine = "pdflatex")
+% can't read OpenType: it gets the same families as Type 1 fonts.
 % ---------------------------------------------------------------------------
 \RequirePackage{amsmath}
-\RequirePackage{fontspec}
-\RequirePackage{unicode-math}
+\RequirePackage{iftex}
 \iftl@beamer
   % Keep beamer from replacing the math fonts with its own sans setup.
   \usefonttheme{professionalfonts}
 \fi
-\setmainfont{LibertinusSerif}[
-  Extension      = .otf,
-  UprightFont    = *-Regular,
-  BoldFont       = *-Bold,
-  ItalicFont     = *-Italic,
-  BoldItalicFont = *-BoldItalic,
-  % Numbers      = OldStyle,   % old-style figures in running text
-]
-\setsansfont{LibertinusSans}[
-  Extension      = .otf,
-  UprightFont    = *-Regular,
-  BoldFont       = *-Bold,
-  ItalicFont     = *-Italic,
-]
-\setmonofont{FiraMono}[
-  Extension      = .otf,
-  UprightFont    = *-Regular,
-  BoldFont       = *-Bold,
-  Scale          = MatchLowercase,
-]
-\setmathfont{LibertinusMath-Regular.otf}
+\ifPDFTeX
+  \RequirePackage[T1]{fontenc}
+  \RequirePackage{libertinus}
+  \RequirePackage{libertinust1math}
+  \RequirePackage[scaled=0.87]{FiraMono}
+\else
+  \RequirePackage{fontspec}
+  \RequirePackage{unicode-math}
+  \setmainfont{LibertinusSerif}[
+    Extension      = .otf,
+    UprightFont    = *-Regular,
+    BoldFont       = *-Bold,
+    ItalicFont     = *-Italic,
+    BoldItalicFont = *-BoldItalic,
+    % Numbers      = OldStyle,   % old-style figures in running text
+  ]
+  \setsansfont{LibertinusSans}[
+    Extension      = .otf,
+    UprightFont    = *-Regular,
+    BoldFont       = *-Bold,
+    ItalicFont     = *-Italic,
+  ]
+  \setmonofont{FiraMono}[
+    Extension      = .otf,
+    UprightFont    = *-Regular,
+    BoldFont       = *-Bold,
+    Scale          = MatchLowercase,
+  ]
+  \setmathfont{LibertinusMath-Regular.otf}
+\fi
 
 \iftl@beamer
   % beamer redefines footnotes; microtype's footnote patch cannot apply there.
   \PassOptionsToPackage{nopatch=footnote}{microtype}
 \fi
-\RequirePackage[
-  protrusion = true,
-  % expansion is not supported by XeTeX; protrusion only.
-]{microtype}
+% Font expansion needs pdfTeX (or LuaTeX); XeTeX does protrusion only.
+\ifPDFTeX
+  \RequirePackage[protrusion = true, expansion = true]{microtype}
+\else
+  \RequirePackage[protrusion = true]{microtype}
+\fi
 
 % ---------------------------------------------------------------------------
 % Page layout (not beamer: beamer controls its own frame geometry)

@@ -59,7 +59,7 @@ test("a deleted input, a changed ternlatex.toml or another engine never reuses",
   rmSync(join(dir, "intro.tex"));
   expect(hit()).toBeNull();
   writeFileSync(join(dir, "intro.tex"), "Version A.\n");
-  expect(find({ ...cfg, engine: "latexmk" } satisfies Config, doc, new Checksums(dir))).toBeNull();
+  expect(find(cfg, { ...doc, engine: "pdflatex" }, new Checksums(dir))).toBeNull();
 });
 
 test("an input saved while the build ran is not cached: what the build read is unknown", async () => {

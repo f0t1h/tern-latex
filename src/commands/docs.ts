@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { loadConfig, paths } from "../config.ts";
 
-/** Lists documents with their last build result from build/status.json. */
+/** Lists documents with their engine and last build result from build/status.json. */
 export function docs(): number {
   const cfg = loadConfig();
   const file = paths(cfg).status;
@@ -12,7 +12,7 @@ export function docs(): number {
     const ok = s && typeof s === "object" && "ok" in s ? s.ok : null;
     const errors = s && typeof s === "object" && "diagnostics" in s && Array.isArray(s.diagnostics) ? s.diagnostics.filter((x: unknown) => Boolean(x && typeof x === "object" && "severity" in x && x.severity === "error")).length : 0;
     const state = ok === true ? "ok" : ok === false ? `FAILED (${errors} errors)` : "not built";
-    console.log(`${d.name}\t${d.root}\t${state}`);
+    console.log(`${d.name}\t${d.root}\t${d.engine}\t${state}`);
   }
   return 0;
 }

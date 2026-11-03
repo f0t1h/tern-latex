@@ -7,10 +7,10 @@ Run `ternlatex docs` to see them. Each document builds to `build/<name>.pdf`; a 
 
 ## Toolchain
 
-- Engine: Tectonic 0.17 (XeTeX). Packages come from a pinned TeX Live 2022 bundle.
-- No shell-escape: `minted` and `\write18` are unavailable. Use `listings` for code.
-- Bibliographies: bibtex + natbib, run automatically by Tectonic. biber/biblatex-biber is unavailable.
-- Fonts: prefer bundle fonts (Libertinus, TeX Gyre, Latin Modern, Fira) via `fontspec`, or project-local fonts in `fonts/` loaded with `fontspec` `Path=fonts/`. System fonts work but are not reproducible.
+- Engine: `engine` in `ternlatex.toml`, per project or per `[[documents]]` entry (`ternlatex docs` shows each document's). Never change it without asking the user.
+  - `tectonic` (the default): Tectonic 0.17 (XeTeX). Packages come from a pinned TeX Live 2022 bundle. No shell-escape: `minted` and `\write18` are unavailable; use `listings` for code. Bibliographies: bibtex + natbib, run automatically. biber/biblatex-biber is unavailable.
+  - `pdflatex`, `xelatex`, `lualatex`: run through latexmk from the user's installed TeX distribution, which supplies the packages (TinyTeX installs missing ones during the build). biber works; shell-escape only if `latexmk_args` has `-shell-escape`.
+- Fonts: with Tectonic, XeLaTeX or LuaLaTeX prefer bundle fonts (Libertinus, TeX Gyre, Latin Modern, Fira) via `fontspec`, or project-local fonts in `fonts/` loaded with `fontspec` `Path=fonts/`. System fonts work but are not reproducible. pdfLaTeX cannot load `fontspec`: use Type 1 font packages (`lmodern`, `libertinus`, `newtxtext`) with `\usepackage[T1]{fontenc}`. The house style `style/ternlatex.sty` handles both.
 
 ## Tools
 

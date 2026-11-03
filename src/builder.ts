@@ -106,7 +106,7 @@ export class Builder extends EventEmitter<{ status: [Status] }> {
         rev: existsSync(docPaths(cfg, doc).pdf) ? 1 : 0,
         state: "idle",
         ok: null,
-        engine: cfg.engine,
+        engine: doc.engine,
         diagnostics: [],
       },
     }));
@@ -247,7 +247,7 @@ export class Builder extends EventEmitter<{ status: [Status] }> {
     // Tectonic keeps its TeX packages in TECTONIC_CACHE_DIR (set by initToolEnv); without its bundle cache the
     // first build downloads them all, which takes a minute or two and looks stalled otherwise.
     const cache = process.env.TECTONIC_CACHE_DIR;
-    const cold = this.cfg.engine === "tectonic" && cache !== undefined && !existsSync(join(cache, "bundles"));
+    const cold = s.doc.engine === "tectonic" && cache !== undefined && !existsSync(join(cache, "bundles"));
     const note = cold ? "first build: downloading the TeX packages (1–2 minutes, once)" : undefined;
     this.#update(s, { build: s.status.build + 1, state: "building", note });
     let ok = false;

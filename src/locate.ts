@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
-import { type Alignment, align, pdfWords, type Token, tokenize, userMacros } from "./align.ts";
+import { type Alignment, align, dropSpacingAccents, pdfWords, type Token, tokenize, userMacros } from "./align.ts";
 import { type Config, type DocConfig, docPaths } from "./config.ts";
 import { parseDeps } from "./engine.ts";
 
@@ -60,9 +60,9 @@ export function plainText(src: string): { text: string; at: number[] } {
   return { text, at };
 }
 
-/** Normalises PDF text-layer text: compatibility forms (ligatures), soft hyphens, whitespace. */
+/** Normalises PDF text-layer text: compatibility forms (ligatures), soft hyphens, OT1's spacing accents, whitespace. */
 function normalise(s: string): string {
-  return s.normalize("NFKC").replace(/\u00ad/g, "").replace(/\s+/g, " ").trim();
+  return dropSpacingAccents(s).normalize("NFKC").replace(/\u00ad/g, "").replace(/\s+/g, " ").trim();
 }
 
 function lineAt(src: string, offset: number): number {

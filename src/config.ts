@@ -7,13 +7,18 @@ export const CONFIG_FILE = "ternlatex.toml";
 /** Tectonic resolves this relay to a fixed TeX Live 2022 tarball; pinning the target keeps builds reproducible. */
 export const DEFAULT_BUNDLE = "https://data1b.fullyjustified.net/tlextras-2022.0r0.tar";
 
-export type EngineName = "tectonic" | "latexmk";
+/** Tectonic (bundled XeTeX, packages downloaded on demand) or a TeX engine of an installed distribution, run by latexmk. */
+export type EngineName = "tectonic" | "pdflatex" | "xelatex" | "lualatex";
+
+export const ENGINES: EngineName[] = ["tectonic", "pdflatex", "xelatex", "lualatex"];
 
 export interface DocConfig {
   /** Short id: output file names, `--doc NAME`, the viewer's switcher. */
   name: string;
   /** Root .tex file, project-relative. */
   root: string;
+  /** What builds it: the project's `engine`, or the document's own. */
+  engine: EngineName;
 }
 
 export interface Config {
@@ -22,9 +27,10 @@ export interface Config {
   /** The project's documents, each built to its own PDF; the first is the default. */
   docs: DocConfig[];
   outdir: string;
+  /** The project's engine; a document may name its own (DocConfig.engine). */
   engine: EngineName;
   bundle: string;
-  /** Extra args for latexmk, e.g. ["-xelatex"]. */
+  /** Extra args for latexmk (TeX engines only), e.g. ["-shell-escape"]. */
   latexmkArgs: string[];
   port: number;
   /** Project-relative path prefixes the watcher ignores, on top of outdir and dot-directories. */
@@ -86,15 +92,14 @@ export function loadConfig(start = process.cwd()): Config {
   const dir = findProject(start);
   if (!dir) throw new UsageError(`no ${CONFIG_FILE} in ${resolve(start)} or its parents; run \`ternlatex init\` or \`ternlatex import\``);
   const raw = parse(readFileSync(join(dir, CONFIG_FILE), "utf8")) as Record<string, unknown>;
-  const engine = str(raw.engine, "tectonic");
-  if (engine !== "tectonic" && engine !== "latexmk") throw new UsageError(`${CONFIG_FILE}: engine must be "tectonic" or "latexmk", got "${engine}"`);
+  const engine = engineName(raw.engine, "tectonic", "engine");
   const cfg: Config = {
     dir,
-    docs: docsConfig(raw),
+    docs: docsConfig(raw, engine),
     outdir: str(raw.outdir, "build"),
     engine,
     bundle: str(raw.bundle, DEFAULT_BUNDLE),
-    latexmkArgs: isStrList(raw.latexmk_args) ? raw.latexmk_args : ["-xelatex"],
+    latexmkArgs: isStrList(raw.latexmk_args) ? raw.latexmk_args : [],
     port: typeof raw.port === "number" ? raw.port : 0,
     ignore: isStrList(raw.ignore) ? raw.ignore : [],
     zotero: zoteroConfig(raw.zotero),
@@ -122,9 +127,19 @@ export function docName(root: string): string {
   return basename(root).replace(/\.tex$/, "");
 }
 
-/** `root = "x.tex"` (one document) or `[[documents]]` tables with `root` and optional `name`. */
-function docsConfig(raw: Record<string, unknown>): DocConfig[] {
-  if (raw.documents === undefined) return [{ name: docName(str(raw.root, "main.tex")), root: str(raw.root, "main.tex") }];
+/** An `engine` value; WHERE names the key for the error. */
+function engineName(v: unknown, fallback: EngineName, where: string): EngineName {
+  if (v === undefined) return fallback;
+  if (v === "latexmk") {
+    throw new UsageError(`${CONFIG_FILE}: ${where} = "latexmk" is now the engine latexmk runs: "pdflatex", "xelatex" or "lualatex" (drop -pdf/-xelatex/-lualatex from latexmk_args)`);
+  }
+  if (typeof v !== "string" || !(ENGINES as string[]).includes(v)) throw new UsageError(`${CONFIG_FILE}: ${where} must be one of ${ENGINES.map((e) => `"${e}"`).join(", ")}, got ${JSON.stringify(v)}`);
+  return v as EngineName;
+}
+
+/** `root = "x.tex"` (one document) or `[[documents]]` tables with `root` and optional `name` and `engine`. */
+function docsConfig(raw: Record<string, unknown>, engine: EngineName): DocConfig[] {
+  if (raw.documents === undefined) return [{ name: docName(str(raw.root, "main.tex")), root: str(raw.root, "main.tex"), engine }];
   if (raw.root !== undefined) throw new UsageError(`${CONFIG_FILE}: use either root or [[documents]], not both`);
   if (!Array.isArray(raw.documents) || raw.documents.length === 0) throw new UsageError(`${CONFIG_FILE}: [[documents]] needs at least one entry`);
   const docs: DocConfig[] = [];
@@ -134,7 +149,7 @@ function docsConfig(raw: Record<string, unknown>): DocConfig[] {
     const name = str(t.name, docName(t.root));
     if (!/^[A-Za-z0-9._-]+$/.test(name)) throw new UsageError(`${CONFIG_FILE}: document name "${name}" may only use letters, digits, . _ -`);
     if (docs.some((d) => d.name === name)) throw new UsageError(`${CONFIG_FILE}: two documents are named "${name}"; set distinct name = "…"`);
-    docs.push({ name, root: t.root });
+    docs.push({ name, root: t.root, engine: engineName(t.engine, engine, `engine of document "${name}"`) });
   }
   return docs;
 }
@@ -148,10 +163,11 @@ export function renderConfig(roots: string[]): string {
     `# ternlatex project — see ${"`ternlatex --help`"}`,
     ...(roots.length === 1 ? [`root = ${JSON.stringify(roots[0])}`] : []),
     `outdir = "build"`,
-    `# "tectonic" (bundled, reproducible) or "latexmk" (uses a host TeX Live; not contained)`,
+    `# "tectonic" (bundled XeTeX, reproducible), or "pdflatex", "xelatex", "lualatex" from an installed TeX`,
+    `# distribution (TinyTeX, MacTeX, TeX Live, MiKTeX) through latexmk; [[documents]] may each set their own`,
     `engine = "tectonic"`,
     `bundle = ${JSON.stringify(DEFAULT_BUNDLE)}`,
-    `# latexmk_args = ["-xelatex"]`,
+    `# latexmk_args = ["-shell-escape"]`,
     `# port = 4820   # 0 = pick a free port`,
     `# ignore = ["data/raw"]`,
     `# checkpoints = true   # snapshot every save onto refs/ternlatex/checkpoints`,
