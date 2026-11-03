@@ -28,6 +28,10 @@ export interface PullResult {
   files: string[];
   /** Why the clone was not brought up to date (left exactly as it was). */
   problem?: string;
+  /** The problem is that Overleaf could not be reached (network, an expired token). */
+  offline?: boolean;
+  /** The problem is that these files changed on both sides: here (commits or uncommitted edits) and on Overleaf. */
+  conflicts?: string[];
 }
 
 // git() never prompts (GIT_TERMINAL_PROMPT=0): an expired token fails the fetch instead of hanging the agent.
@@ -58,7 +62,7 @@ export async function pullOverleaf(dir: string): Promise<PullResult> {
   if (upstream === null) return none;
 
   const fetched = await git(dir, ["fetch", "--quiet", upstream.remote], { timeoutMs: FETCH_TIMEOUT_MS });
-  if (fetched.code !== 0) return { overleaf: true, pulled: 0, files: [], problem: `could not fetch from Overleaf: ${failure(fetched)}` };
+  if (fetched.code !== 0) return { overleaf: true, pulled: 0, files: [], problem: `could not fetch from Overleaf: ${failure(fetched)}`, offline: true };
   const behind = Number((await git(dir, ["rev-list", "--count", "HEAD..@{u}"])).stdout.trim()) || 0;
   if (!behind) return { overleaf: true, pulled: 0, files: [] };
   const files = lines(await git(dir, ["diff", "--name-only", "HEAD...@{u}"]));
@@ -67,7 +71,7 @@ export async function pullOverleaf(dir: string): Promise<PullResult> {
   const dirty = lines(await git(dir, ["diff", "--name-only", "HEAD"]));
   const clash = dirty.filter((f) => files.includes(f));
   if (clash.length) {
-    return { overleaf: true, pulled: 0, files, problem: `Overleaf has ${behind} new commit(s) changing ${clash.join(", ")}, which also has uncommitted edits here; commit them, then pull and resolve` };
+    return { overleaf: true, pulled: 0, files, conflicts: clash, problem: `Overleaf has ${behind} new commit(s) changing ${clash.join(", ")}, which also has uncommitted edits here; commit them, then pull and resolve` };
   }
   // Local commits are replayed on top of Overleaf's; uncommitted edits to other files are stashed and restored.
   const rebased = await git(dir, ["rebase", "--autostash", "--quiet", "@{u}"]);
@@ -79,6 +83,7 @@ export async function pullOverleaf(dir: string): Promise<PullResult> {
       overleaf: true,
       pulled: 0,
       files,
+      conflicts: conflicted.length ? conflicted : files,
       problem: `your commits conflict with Overleaf's ${behind} new commit(s) ${where}; nothing was pulled and your commits are kept: merge them with \`git pull --rebase\`, or ask omp to`,
     };
   }
@@ -96,6 +101,10 @@ export interface OverleafState {
   edited: string[];
   /** Why the last background pull didn't happen, or failed. */
   problem?: string;
+  /** Overleaf could not be reached at the last check: the numbers are from the last fetch that worked. */
+  offline: boolean;
+  /** Files changed both here and on Overleaf, so no pull happened (a merge needs the user). */
+  conflicts: string[];
   /** The last background pull: how many commits, which files. */
   pulled?: { commits: number; files: string[] };
   /** Co-authors with commits on Overleaf in the last RECENT_DAYS, most recent first (the user left out). */
@@ -154,8 +163,8 @@ export async function overleafState(dir: string): Promise<OverleafState | null> 
   const behind = await count("HEAD..@{u}");
   const ahead = await count("@{u}..HEAD");
   const incoming = behind ? lines(await git(dir, ["diff", "--name-only", "HEAD...@{u}"])) : [];
-  const state: OverleafState = { behind, ahead, incoming, edited, people: await collaborators(dir), checkedAt };
-  return fetched.code === 0 ? state : { ...state, problem: `could not reach Overleaf: ${failure(fetched)}` };
+  const state: OverleafState = { behind, ahead, incoming, edited, offline: false, conflicts: [], people: await collaborators(dir), checkedAt };
+  return fetched.code === 0 ? state : { ...state, offline: true, problem: `could not reach Overleaf: ${failure(fetched)}` };
 }
 
 /** Review authors that aren't people: their marks are suggestions for the user, not edits to share. */
@@ -308,11 +317,11 @@ export class OverleafSync {
       const unsaved = await this.#unsaved().catch((): string[] => []);
       const busy = state.incoming.filter((f) => unsaved.includes(f) || state?.edited.includes(f));
       if (busy.length) {
-        state = { ...state, problem: `Overleaf changed ${busy.join(", ")}, which you're editing here: save and push your edits (or undo them), then pull` };
+        state = { ...state, conflicts: busy, problem: `Overleaf changed ${busy.join(", ")}, which you're editing here: save and push your edits (or undo them), then pull` };
       } else {
         const pull = await pullOverleaf(dir);
         state = pull.problem
-          ? { ...state, problem: pull.problem }
+          ? { ...state, problem: pull.problem, offline: pull.offline === true, conflicts: pull.conflicts ?? [] }
           : { ...((await overleafState(dir)) ?? state), pulled: { commits: pull.pulled, files: pull.files } };
       }
     }

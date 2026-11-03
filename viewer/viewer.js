@@ -2782,22 +2782,55 @@ function onOverleaf(s) {
   renderOverleaf();
 }
 
+/**
+ * The Overleaf button's badge: one coloured segment per kind of difference, worst first. Red ⚠n: files changed
+ * on both sides (no pull until merged); grey "offline": Overleaf unreachable (the rest is as of the last fetch
+ * that worked); amber ↓n: Overleaf's commits not pulled yet (normally pulled within a minute); blue ↑: local
+ * edits or commits Overleaf lacks (expected until you push); green ✓: the same as Overleaf.
+ */
+function overleafBadge(s) {
+  if (!s) return { parts: [], title: 'Overleaf: checking…' };
+  const parts = [];
+  const said = [];
+  if (s.conflicts?.length) {
+    parts.push(['ol-conflict', `⚠${s.conflicts.length}`]);
+    said.push(`${plural(s.conflicts.length, 'file')} changed both here and on Overleaf`);
+  } else if (s.problem && !s.offline) {
+    parts.push(['ol-warn', '⚠']);
+    said.push('the last pull did not happen');
+  }
+  if (s.offline) {
+    parts.push(['ol-off', '⊘ offline']);
+    said.push(`Overleaf unreachable (as of ${clockTime(s.checkedAt)})`);
+  }
+  if (s.behind) {
+    parts.push(['ol-in', `↓${s.behind}`]);
+    said.push(`${plural(s.behind, 'commit')} on Overleaf not pulled yet`);
+  }
+  if (s.ahead || s.edited.length) {
+    parts.push(['ol-out', `↑${s.ahead || '•'}`]);
+    said.push(s.ahead ? `${plural(s.ahead, 'commit')} to push` : 'edits not pushed yet');
+  }
+  if (!parts.length) {
+    parts.push(['ol-ok', '✓']);
+    said.push('same as Overleaf');
+  }
+  return { parts, title: `Overleaf: ${said.join(' · ')}` };
+}
+
 function renderOverleaf() {
   const s = state.overleaf;
   const btn = ui.overleafBtn;
   btn.classList.toggle('busy', overleafBusy);
-  btn.classList.toggle('behind', Boolean(s?.behind));
-  btn.classList.toggle('problem', Boolean(s?.problem));
-  const badge = [];
-  if (s?.problem) badge.push('⚠');
-  if (s?.behind) badge.push(`↓${s.behind}`);
-  if (s?.ahead || s?.edited.length) badge.push(`↑${s.ahead || '•'}`);
-  ui.overleafBadge.textContent = badge.join(' ');
+  btn.classList.toggle('offline', Boolean(s?.offline));
+  const badge = overleafBadge(s);
+  ui.overleafBadge.replaceChildren(...badge.parts.map(([cls, text]) => el('span', cls, text)));
   const notes = [];
   const note = (text, cls) => notes.push(el('div', `menu-note${cls ? ` ${cls}` : ''}`, text));
   if (!s) note('Checking Overleaf…');
   else {
-    if (s.problem) note(s.problem, 'problem');
+    if (s.conflicts?.length) note(`Changed both here and on Overleaf: ${s.conflicts.join(', ')}`, 'conflict');
+    if (s.problem) note(s.problem, s.offline ? 'offline' : 'problem');
     if (s.behind) note(`Overleaf has ${plural(s.behind, 'new commit')}: ${s.incoming.join(', ')}`);
     if (s.edited.length) note(`Not pushed: edits to ${s.edited.join(', ')}`);
     if (s.ahead) note(`Not pushed: ${plural(s.ahead, 'commit')}`);
@@ -2826,7 +2859,7 @@ function renderOverleaf() {
   ui.overleafPeople.replaceChildren(...people);
   ui.overleafPull.disabled = overleafBusy;
   ui.overleafPush.disabled = overleafBusy;
-  btn.title = s?.problem ? `Overleaf: ${s.problem}` : "Overleaf: pull co-authors' edits, push yours";
+  btn.title = `${badge.title}\nClick to pull now, push, or see co-authors' recent edits`;
   renderPeople();
 }
 

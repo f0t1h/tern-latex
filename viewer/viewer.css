@@ -247,12 +247,20 @@ button:disabled { opacity: 0.45; cursor: default; background: none; }
 #changes-btn .spinner, #overleaf-btn .spinner { display: none; width: 11px; height: 11px; }
 #changes-btn.busy .spinner, #overleaf-btn.busy .spinner { display: inline-block; }
 #changes-btn.busy .glyph, #overleaf-btn.busy .glyph { display: none; }
-#overleaf-badge { color: var(--muted); font-variant-numeric: tabular-nums; }
+#overleaf-badge { display: inline-flex; gap: 5px; font-variant-numeric: tabular-nums; font-weight: 600; }
 #overleaf-badge:empty { display: none; }
-#overleaf-btn.behind #overleaf-badge { color: var(--info); font-weight: 600; }
-#overleaf-btn.problem #overleaf-badge { color: var(--warn); font-weight: 600; }
+#overleaf-badge .ol-ok { color: var(--ok); }
+#overleaf-badge .ol-out { color: var(--info); }
+#overleaf-badge .ol-in { color: var(--warn); }
+#overleaf-badge .ol-warn { color: var(--warn); }
+#overleaf-badge .ol-conflict { color: var(--err); }
+#overleaf-badge .ol-off { color: var(--muted); font-weight: 500; }
+/* Unreachable: the glyph and the numbers are from the last fetch that worked. */
+#overleaf-btn.offline .glyph { opacity: 0.45; }
 #overleaf-summary .menu-note { white-space: normal; }
 #overleaf-summary .menu-note.problem { color: var(--warn); }
+#overleaf-summary .menu-note.conflict { color: var(--err); font-weight: 600; }
+#overleaf-summary .menu-note.offline { color: var(--muted); }
 #people { display: flex; align-items: center; gap: 2px; margin-right: 2px; }
 #people .person { padding: 2px; border-radius: 50%; }
 .avatar {

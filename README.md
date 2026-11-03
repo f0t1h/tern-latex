@@ -137,8 +137,12 @@ omp) tells you, when Overleaf changed a file you have edited and not pushed yet 
 or a commit of yours conflicts with Overleaf's. `ternlatex pull` pulls by hand. Other remotes (GitHub, a
 co-author's server) are not pulled.
 
-**⇅ Overleaf** in the viewer shows where you stand: `↓2` Overleaf has two commits you don't, `↑•` you
-have edits it doesn't, `⚠` a pull was held off (the menu says why). **Push to Overleaf…** (or `ternlatex
+**⇅ Overleaf** in the viewer shows where you stand, worst first: a red `⚠1` is a file changed both here and
+on Overleaf (no pull until you merge), a grey `⊘ offline` means Overleaf can't be reached (an expired
+token, no network; the rest is as of the last fetch that worked), an amber `↓2` is two Overleaf commits not
+pulled yet (normally pulled within a minute), a blue `↑3` or `↑•` is commits or edits of yours Overleaf
+lacks (expected until you push), and a green `✓` means the same as Overleaf. The menu says why.
+**Push to Overleaf…** (or `ternlatex
 push -m "message"`) commits your edited files and the new files the build reads (a figure you added),
 rebases onto Overleaf, builds and pushes. It refuses while omp, the proofreader or dictation still have
 marks in the sources: accept or reject them in ✎ Review first, so co-authors only get edits you made or

@@ -67,7 +67,7 @@ test("uncommitted edits to a file Overleaf also changed stop the pull and stay a
   writeFileSync(join(ours, "main.tex"), "mine\n");
   const r = await pullOverleaf(ours);
   expect(r.pulled).toBe(0);
-  expect(r.problem).toContain("main.tex");
+  expect(r.conflicts).toEqual(["main.tex"]);
   expect(readFileSync(join(ours, "main.tex"), "utf8")).toBe("mine\n");
 });
 
@@ -78,8 +78,20 @@ test("a local commit that conflicts with Overleaf is left in place, the rebase u
   await gitOk(ours, [...ID, "commit", "-qam", "mine"]);
   const r = await pullOverleaf(ours);
   expect(r.problem).toContain("conflict with Overleaf's 1 new commit(s) in main.tex");
+  expect(r.conflicts).toEqual(["main.tex"]);
   expect(readFileSync(join(ours, "main.tex"), "utf8")).toBe("mine\n");
   expect(await gitOk(ours, ["status", "--porcelain"])).toBe("");
+});
+
+test("an unreachable Overleaf is reported as offline, not as a conflict", async () => {
+  const { ours } = await setup("offline");
+  // The Overleaf URL now leads nowhere, as with no network or an expired token.
+  await gitOk(ours, ["config", "--unset-all", `url.${join(root, "offline", "overleaf.git")}.insteadOf`]);
+  await gitOk(ours, ["config", `url.${join(root, "offline", "gone.git")}.insteadOf`, `https://git.overleaf.com/${PROJECT}`]);
+  const r = await pullOverleaf(ours);
+  expect(r).toMatchObject({ overleaf: true, pulled: 0, offline: true });
+  expect(r.conflicts).toBeUndefined();
+  expect((await overleafState(ours))?.offline).toBe(true);
 });
 
 test("a clone of another host is not touched", async () => {
