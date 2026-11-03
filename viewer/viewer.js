@@ -67,6 +67,16 @@ const ui = {
   selSource: $('sel-source'),
   selProofread: $('sel-proofread'),
   selRewrite: $('sel-rewrite'),
+  selTable: $('sel-table'),
+  tablePanel: $('table-panel'),
+  tableWhere: $('table-where'),
+  tableTrack: $('table-track'),
+  tableClose: $('table-close'),
+  tableTools: $('table-tools'),
+  tableGrid: $('table-grid'),
+  tableSummary: $('table-summary'),
+  tableCancel: $('table-cancel'),
+  tableSave: $('table-save'),
   selAsk: $('sel-ask'),
   selDictate: $('sel-dictate'),
   selReview: $('sel-review'),
@@ -1403,11 +1413,11 @@ const FMT_WRAP = {
 };
 
 /**
- * Applies toolbar format KIND to the box's selection: wraps it in a command, or makes a list of its lines (one
- * empty \item without a selection). The selection ends up on the wrapped text, else the caret where to type.
+ * Applies toolbar format KIND to BOX's selection (the Replace… box, or a table cell): wraps it in a command, or
+ * makes a list of its lines (one empty \item without a selection). The selection ends up on the wrapped text,
+ * else the caret where to type.
  */
-function applyFormat(kind) {
-  const box = ui.selInput;
+function applyFormat(kind, box = ui.selInput) {
   const s = box.selectionStart;
   const e = box.selectionEnd;
   const picked = box.value.slice(s, e);
@@ -1432,7 +1442,8 @@ function applyFormat(kind) {
   if (!document.execCommand('insertText', false, text)) box.setRangeText(text, s, e, 'end');
   box.setSelectionRange(from, to);
   autoGrow(box);
-  anchorSelBar();
+  if (box === ui.selInput) anchorSelBar();
+  else box.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
 function openAsk() {
@@ -1484,7 +1495,23 @@ function showSelBar(info) {
   ui.selInput.placeholder = SEL_PLACEHOLDER;
   setAskMode(false);
   ui.selBar.hidden = false;
+  ui.selTable.hidden = true;
   updateSelButtons();
+  probeTable(info);
+}
+
+/** Shows Table… when the selection starts in a table (POST /table/probe). */
+async function probeTable(info) {
+  try {
+    const res = await postJSON('/table/probe', withDoc({ page: info.page, x: info.start.x, y: info.start.y }));
+    const data = await res.json().catch(() => null);
+    if (state.sel === info && data?.table === true) {
+      ui.selTable.hidden = false;
+      anchorSelBar();
+    }
+  } catch {
+    // No server: no Table… button.
+  }
 }
 
 function hideSelBar() {
@@ -1622,6 +1649,293 @@ async function markSelection(kind, input = '') {
     toast('Marking failed: server unreachable');
   } finally {
     setSelBusy(false);
+  }
+}
+
+// ---------------------------------------------------------------- table editor (src/table.ts)
+
+/**
+ * The open table: the server's view (src/server.ts tableView), its grid columns (`from`: an original column's
+ * index, null for a new one) and its lines as shown: rules, and rows with one text per grid column (`orig` null
+ * for a new row; `spans` 0 for columns a \multicolumn covers).
+ */
+let tb = null;
+
+function tableOpen() {
+  return !ui.tablePanel.hidden;
+}
+
+/** A row of the view as grid texts: a \multicolumn's text in its first column, '' in those it covers. */
+function gridRow(row, width) {
+  const cells = [];
+  const spans = [];
+  const locked = [];
+  for (const c of row.cells) {
+    cells.push(c.text);
+    spans.push(c.span);
+    locked.push(c.locked ?? null);
+    for (let k = 1; k < c.span; k++) {
+      cells.push('');
+      spans.push(0);
+      locked.push(null);
+    }
+  }
+  while (cells.length < width) {
+    cells.push('');
+    spans.push(1);
+    locked.push(null);
+  }
+  return { kind: 'row', from: null, orig: null, cells, spans, locked, deleted: false };
+}
+
+function newTableRow() {
+  const w = tb.columns.length;
+  return { kind: 'row', from: null, orig: null, cells: Array(w).fill(''), spans: Array(w).fill(1), locked: Array(w).fill(null), deleted: false };
+}
+
+/** Opens the editor on the table at WHERE: `{file, line}` (from the editor) or `{page, x, y}` (a selection). */
+async function openTable(where) {
+  let view;
+  try {
+    const res = await postJSON('/table/source', withDoc(where));
+    view = await res.json().catch(() => null);
+    if (!res.ok || !Array.isArray(view?.lines)) {
+      toast(view?.error ?? `No table there (${res.status})`, 4000);
+      return;
+    }
+  } catch {
+    toast('Table: server unreachable');
+    return;
+  }
+  const width = view.columns.length;
+  let n = 0;
+  const items = view.lines.map((l) => {
+    if (l.kind === 'rule') return { kind: 'rule', text: l.text };
+    const row = gridRow(l, width);
+    return { ...row, from: n++, orig: [...row.cells] };
+  });
+  tb = { view, items, columns: view.columns.map((c, i) => ({ from: i, numeric: c.numeric })), focus: null, busy: false };
+  hideSelBar();
+  document.getSelection()?.removeAllRanges();
+  if (rewriteOpen()) closeRewrite();
+  ui.tableTrack.checked = true;
+  ui.tableWhere.textContent = `${view.file}:${view.line} · ${view.env}{${view.spec}}`;
+  ui.tablePanel.hidden = false;
+  renderTable();
+  ui.tableGrid.querySelector('textarea:not([readonly])')?.focus();
+}
+
+function closeTable(force = false) {
+  if (!tb) return;
+  const c = tableChanges();
+  if (!force && c.total && !confirm('Discard your table edits?')) return;
+  tb = null;
+  ui.tablePanel.hidden = true;
+  ui.tableGrid.replaceChildren();
+}
+
+function tableChanges() {
+  let cells = 0;
+  let added = 0;
+  let removed = 0;
+  for (const it of tb.items) {
+    if (it.kind !== 'row') continue;
+    if (it.from === null) added += it.cells.some((t) => t.trim()) ? 1 : 0;
+    else if (it.deleted) removed++;
+    else cells += it.cells.filter((t, c) => tb.columns[c].from !== null && t.trim() !== it.orig[c].trim()).length;
+  }
+  const cols = tb.columns.length !== tb.view.columns.length || tb.columns.some((c, i) => c.from !== i);
+  return { cells, added, removed, cols, total: cells + added + removed + (cols ? 1 : 0) };
+}
+
+function renderTable() {
+  const width = tb.columns.length;
+  const trs = tb.items.map((it, r) => {
+    const tr = document.createElement('tr');
+    if (it.kind === 'rule') {
+      tr.className = /^\\(?:top|bottom)rule/.test(it.text) ? 'rule' : 'rule thin';
+      const td = el('td');
+      td.colSpan = width;
+      td.title = it.text;
+      td.append(document.createElement('hr'));
+      tr.append(td);
+      return tr;
+    }
+    tr.className = it.from === null ? 'new' : it.deleted ? 'deleted' : '';
+    for (let c = 0; c < width; c++) {
+      if (it.spans[c] === 0) continue;
+      const td = el('td');
+      if (it.spans[c] > 1) td.colSpan = it.spans[c];
+      if (tb.columns[c].numeric) td.classList.add('num');
+      const ta = document.createElement('textarea');
+      ta.rows = 1;
+      ta.spellcheck = false;
+      ta.value = it.cells[c];
+      ta.dataset.r = String(r);
+      ta.dataset.c = String(c);
+      if (it.locked[c]) {
+        ta.readOnly = true;
+        td.classList.add('locked');
+        ta.title = `${it.locked[c]}: edit it in the source`;
+      } else if (it.deleted) {
+        ta.readOnly = true;
+        ta.title = 'Removed when you mark or save; − Row again keeps it';
+      }
+      td.append(ta);
+      tr.append(td);
+      markCell(td, it, c);
+    }
+    return tr;
+  });
+  ui.tableGrid.replaceChildren(...trs);
+  for (const ta of ui.tableGrid.querySelectorAll('textarea')) autoGrow(ta);
+  updateTableUI();
+}
+
+/** Shows whether cell C of row IT differs from the source, with the old text under it. */
+function markCell(td, it, c) {
+  // A new column's cells are new, not changed: the column change says so.
+  const changed = Boolean(it.orig) && !it.deleted && tb.columns[c].from !== null && it.cells[c].trim() !== it.orig[c].trim();
+  td.classList.toggle('changed', changed);
+  td.querySelector('.was')?.remove();
+  if (changed) td.append(el('div', 'was', it.orig[c] || '(empty)'));
+}
+
+function updateTableUI() {
+  const c = tableChanges();
+  const track = ui.tableTrack.checked;
+  const parts = [];
+  if (c.cells) parts.push(plural(c.cells, 'cell'));
+  if (c.added) parts.push(plural(c.added, 'new row'));
+  if (c.removed) parts.push(`${plural(c.removed, 'row')} removed`);
+  if (c.cols) parts.push('columns changed');
+  ui.tableSummary.textContent = parts.length ? `${parts.join(' · ')}${track ? ', as tracked changes' : ', as plain edits'}` : 'No changes yet';
+  for (const b of ui.tableTools.querySelectorAll('[data-tb^="col-"]')) b.disabled = track;
+  // Changed columns can't be tracked, so tracking stays off until they are back.
+  ui.tableTrack.disabled = c.cols;
+  ui.tableSave.textContent = track ? 'Mark' : 'Save';
+  ui.tableSave.disabled = !c.total || tb.busy;
+}
+
+/** The focused cell's textarea, else the first editable one. */
+function tableBox() {
+  const f = tb.focus && ui.tableGrid.querySelector(`textarea[data-r="${tb.focus.r}"][data-c="${tb.focus.c}"]`);
+  return f || ui.tableGrid.querySelector('textarea:not([readonly])');
+}
+
+function focusTableCell(r, c) {
+  const ta = ui.tableGrid.querySelector(`textarea[data-r="${r}"][data-c="${c}"]`);
+  ta?.focus();
+  ta?.select();
+}
+
+function tableTool(kind) {
+  if (!tb) return;
+  const box = tableBox();
+  const r = box ? Number(box.dataset.r) : tb.items.findIndex((i) => i.kind === 'row');
+  const c = box ? Number(box.dataset.c) : 0;
+  const it = tb.items[r];
+  if (kind === 'bold' || kind === 'emph' || kind === 'math') {
+    if (box && !box.readOnly) applyFormat(kind, box);
+    return;
+  }
+  if (kind === 'row-above' || kind === 'row-below') {
+    const at = r < 0 ? tb.items.length : kind === 'row-above' ? r : r + 1;
+    tb.items.splice(at, 0, newTableRow());
+    renderTable();
+    focusTableCell(at, Math.min(c, tb.columns.length - 1));
+    return;
+  }
+  if (kind === 'row-delete' && it?.kind === 'row') {
+    if (it.from === null) tb.items.splice(r, 1);
+    else it.deleted = !it.deleted;
+    renderTable();
+    return;
+  }
+  if (kind.startsWith('col-')) {
+    if (ui.tableTrack.checked) return;
+    if (tb.items.some((i) => i.kind === 'row' && i.spans.some((s) => s !== 1))) {
+      toast('This table has \\multicolumn cells; change its columns in the source', 4000);
+      return;
+    }
+    if (kind === 'col-delete') {
+      if (tb.columns.length < 2) return;
+      tb.columns.splice(c, 1);
+      for (const i of tb.items) if (i.kind === 'row') for (const a of [i.cells, i.orig, i.spans, i.locked]) a?.splice(c, 1);
+      renderTable();
+      focusTableCell(r, Math.min(c, tb.columns.length - 1));
+      return;
+    }
+    const at = kind === 'col-left' ? c : c + 1;
+    // A new column is like its neighbour: numbers next to numbers.
+    tb.columns.splice(at, 0, { from: null, numeric: tb.columns[c]?.numeric === true });
+    for (const i of tb.items) {
+      if (i.kind !== 'row') continue;
+      i.cells.splice(at, 0, '');
+      i.orig?.splice(at, 0, '');
+      i.spans.splice(at, 0, 1);
+      i.locked.splice(at, 0, null);
+    }
+    renderTable();
+    focusTableCell(r, at);
+  }
+}
+
+const LATEX_SPECIALS = { '\\': '\\textbackslash{}', '{': '\\{', '}': '\\}', $: '\\$', '&': '\\&', '#': '\\#', _: '\\_', '%': '\\%', '^': '\\textasciicircum{}', '~': '\\textasciitilde{}' };
+
+/** Pasted cells (a spreadsheet range: tabs between cells, newlines between rows) from cell R, C onwards. */
+function pasteTable(r, c, text) {
+  const grid = text.replace(/\r/g, '').replace(/\n$/, '').split('\n').map((l) => l.split('\t'));
+  // Plain text is escaped (R&D, 50%); text with a backslash or $ is taken as LaTeX.
+  const latex = (t) => (/[\\$]/.test(t) ? t.trim() : t.trim().replace(/[\\{}$&#_%^~]/g, (ch) => LATEX_SPECIALS[ch]));
+  let dropped = 0;
+  let at = r;
+  for (const values of grid) {
+    while (at < tb.items.length && (tb.items[at].kind !== 'row' || tb.items[at].deleted)) at++;
+    if (at >= tb.items.length) {
+      // Past the last row: a new row after it, before the closing rule.
+      at = tb.items.map((i) => i.kind).lastIndexOf('row') + 1;
+      tb.items.splice(at, 0, newTableRow());
+    }
+    const it = tb.items[at];
+    values.forEach((v, k) => {
+      const col = c + k;
+      if (col >= tb.columns.length) dropped++;
+      else if (it.spans[col] !== 0 && !it.locked[col]) it.cells[col] = latex(v);
+    });
+    at++;
+  }
+  renderTable();
+  focusTableCell(r, c);
+  if (dropped) toast(`${plural(dropped, 'pasted cell')} past the last column left out`, 4000);
+}
+
+async function saveTable() {
+  if (!tb || tb.busy || !tableChanges().total) return;
+  const rows = tb.items
+    .filter((i) => i.kind === 'row' && !(i.from === null && i.cells.every((t) => !t.trim())))
+    .map((i) => ({ from: i.from, cells: i.cells, ...(i.deleted ? { deleted: true } : {}) }));
+  const body = { file: tb.view.file, begin: tb.view.begin, version: tb.view.version, rows, columns: tb.columns.map((c) => ({ from: c.from })), track: ui.tableTrack.checked };
+  tb.busy = true;
+  updateTableUI();
+  try {
+    const res = await postJSON('/table/apply', withDoc(body));
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      toast(data?.error ?? `Table not saved (${res.status})`, 6000);
+      return;
+    }
+    const how = data.tracked ? `marked as ${data.author}` : 'saved';
+    toast(`Table ${how} (${data.file}:${data.line})${data.pending ? ' — suggestions in ✎ Review (the document does not load changes)' : ''}`, 4000);
+    closeTable(true);
+    if (!ui.reviewPanel.hidden) fetchReview();
+  } catch {
+    toast('Table: server unreachable');
+  } finally {
+    if (tb) {
+      tb.busy = false;
+      updateTableUI();
+    }
   }
 }
 
@@ -3251,6 +3565,11 @@ function connect() {
     const r = parse(e.data);
     if (r) onReveal(r);
   });
+  // `ternlatex table` (the editor's Edit table): open the table at that line.
+  es.addEventListener('table', (e) => {
+    const t = parse(e.data);
+    if (t && typeof t.file === 'string' && typeof t.line === 'number' && !tableOpen()) openTable({ file: t.file, line: t.line });
+  });
   es.addEventListener('error', () => {
     setConnected(false);
     // EventSource retries by itself unless the server answered with an error status.
@@ -3734,6 +4053,11 @@ window.addEventListener('keydown', (e) => {
       e.preventDefault();
       return;
     }
+    if ((e.key === 't' || e.key === 'T') && state.sel && !askOpen() && !ui.selTable.hidden) {
+      openTable({ page: state.sel.page, x: state.sel.start.x, y: state.sel.start.y });
+      e.preventDefault();
+      return;
+    }
     // Review marks with the bar open: ⌫ strike, E replace, I insert, H highlight, C comment.
     if (state.sel && !askOpen() && state.caps.reviewer && !selBusy) {
       const k = e.key.toLowerCase();
@@ -3870,6 +4194,77 @@ ui.selBar.addEventListener('mousedown', (e) => {
 ui.selSource.addEventListener('click', selSource);
 ui.selProofread.addEventListener('click', () => sendToAgent('proofread'));
 ui.selRewrite.addEventListener('click', openRewrite);
+ui.selTable.addEventListener('click', () => {
+  if (state.sel) openTable({ page: state.sel.page, x: state.sel.start.x, y: state.sel.start.y });
+});
+ui.tableClose.addEventListener('click', () => closeTable());
+ui.tableCancel.addEventListener('click', () => closeTable());
+ui.tableSave.addEventListener('click', saveTable);
+ui.tableTrack.addEventListener('change', updateTableUI);
+ui.tableTools.addEventListener('mousedown', (e) => e.preventDefault()); // keep the cell's focus and selection
+ui.tableTools.addEventListener('click', (e) => {
+  const b = e.target instanceof Element ? e.target.closest('button[data-tb]') : null;
+  if (b instanceof HTMLButtonElement && b.dataset.tb && !b.disabled) tableTool(b.dataset.tb);
+});
+ui.tableGrid.addEventListener('focusin', (e) => {
+  const ta = e.target;
+  if (tb && ta instanceof HTMLTextAreaElement) tb.focus = { r: Number(ta.dataset.r), c: Number(ta.dataset.c) };
+});
+ui.tableGrid.addEventListener('input', (e) => {
+  const ta = e.target;
+  if (!tb || !(ta instanceof HTMLTextAreaElement)) return;
+  const it = tb.items[Number(ta.dataset.r)];
+  const c = Number(ta.dataset.c);
+  it.cells[c] = ta.value.replace(/\n/g, ' ');
+  autoGrow(ta);
+  const td = ta.closest('td');
+  if (td) markCell(td, it, c);
+  updateTableUI();
+});
+ui.tableGrid.addEventListener('paste', (e) => {
+  const ta = e.target;
+  const text = e.clipboardData?.getData('text/plain') ?? '';
+  // One value pastes as text; a range (tabs or several lines) fills cells.
+  if (!tb || !(ta instanceof HTMLTextAreaElement) || !/[\t\n]/.test(text.replace(/\r?\n$/, ''))) return;
+  e.preventDefault();
+  pasteTable(Number(ta.dataset.r), Number(ta.dataset.c), text);
+});
+ui.tablePanel.addEventListener('keydown', (e) => {
+  e.stopPropagation(); // the viewer's own keys stay out of the editor
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    closeTable();
+    return;
+  }
+  if (e.key === 'Enter' && (IS_MAC ? e.metaKey : e.ctrlKey)) {
+    e.preventDefault();
+    saveTable();
+    return;
+  }
+  const ta = e.target;
+  if (!tb || !(ta instanceof HTMLTextAreaElement)) return;
+  const fmt = formatChord(e);
+  if (fmt) {
+    e.preventDefault();
+    if (!ta.readOnly) applyFormat(fmt, ta);
+    return;
+  }
+  const boxes = [...ui.tableGrid.querySelectorAll('textarea')];
+  const at = boxes.indexOf(ta);
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    const next = boxes[at + (e.shiftKey ? -1 : 1)];
+    next?.focus();
+    next?.select();
+  } else if (e.key === 'Enter' && !e.isComposing) {
+    // The cell below (the next row that has this column), not a new line: a cell is one line of LaTeX.
+    e.preventDefault();
+    const c = ta.dataset.c;
+    const below = boxes.slice(at + 1).find((b) => b.dataset.c === c && b.dataset.r !== ta.dataset.r);
+    below?.focus();
+    below?.select();
+  }
+});
 ui.rewriteClose.addEventListener('click', closeRewrite);
 ui.rewriteInput.addEventListener('input', () => autoGrow(ui.rewriteInput));
 ui.rewriteInput.addEventListener('keydown', (e) => {
@@ -3912,14 +4307,19 @@ ui.selFmt.addEventListener('click', (e) => {
   const b = e.target instanceof Element ? e.target.closest('button[data-fmt]') : null;
   if (b instanceof HTMLButtonElement && b.dataset.fmt) applyFormat(b.dataset.fmt);
 });
-/** The box's format keys while the toolbar shows: ⌘B bold, ⌘I emphasis, ⌘⇧M math (Ctrl elsewhere). */
-function formatKey(e) {
-  if (ui.selFmt.hidden || e.altKey || !(IS_MAC ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey)) return null;
+/** The format keys: ⌘B bold, ⌘I emphasis, ⌘⇧M math (Ctrl elsewhere); null for any other key. */
+function formatChord(e) {
+  if (e.altKey || !(IS_MAC ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey)) return null;
   const k = e.key.toLowerCase();
   if (k === 'b' && !e.shiftKey) return 'bold';
   if (k === 'i' && !e.shiftKey) return 'emph';
   if (k === 'm' && e.shiftKey) return 'math';
   return null;
+}
+
+/** The Replace… box's format keys, while its toolbar shows. */
+function formatKey(e) {
+  return ui.selFmt.hidden ? null : formatChord(e);
 }
 ui.selInput.addEventListener('keydown', (e) => {
   e.stopPropagation(); // keep global shortcuts (Escape, zoom) out of the input

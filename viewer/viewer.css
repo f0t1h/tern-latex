@@ -837,6 +837,73 @@ body.diff-mode { --top: calc(var(--bar-h) + var(--diff-h)); }
 #rewrite-list ins { text-decoration: none; background: color-mix(in srgb, var(--info) 22%, transparent); border-radius: 2px; }
 #rewrite-panel .rw-foot { font-size: 11px; }
 
+/* ---------- table editor ---------- */
+
+#table-panel {
+  position: fixed;
+  z-index: 30;
+  top: calc(var(--top) + 12px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(980px, calc(100vw - 24px));
+  max-height: calc(100vh - var(--top) - 24px);
+  padding: 10px 12px;
+  background: var(--panel-bg);
+  color: var(--panel-fg);
+  border: 1px solid var(--bar-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+  font-size: 13px;
+}
+#table-panel .tb-head, #table-panel .tb-foot { display: flex; align-items: center; gap: 8px; }
+#table-panel .spacer { flex: 1; }
+#table-panel .tb-title { font-weight: 600; }
+#table-where { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+#table-panel .tb-title, #table-panel .tb-track { white-space: nowrap; }
+#table-panel .tb-track { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; cursor: pointer; }
+#table-close { border: none; background: none; color: inherit; font-size: 16px; cursor: pointer; padding: 0 4px; }
+#table-tools { display: flex; align-items: center; gap: 1px; flex-wrap: wrap; }
+#table-tools button { padding: 2px 7px; font-size: 12px; line-height: 1.3; }
+#table-tools button:disabled { opacity: 0.4; }
+#table-tools .fmt-sep { width: 1px; align-self: stretch; margin: 2px 4px; background: var(--bar-border); }
+#table-grid-wrap { overflow: auto; min-height: 60px; }
+#table-grid { border-collapse: collapse; width: 100%; }
+#table-grid td { padding: 0; border: 1px solid var(--bar-border); vertical-align: top; }
+#table-grid tr.rule td { border: none; padding: 2px 0; }
+#table-grid tr.rule hr { margin: 0; border: none; border-top: 1.5px solid var(--panel-fg); opacity: 0.7; }
+#table-grid tr.rule.thin hr { border-top-width: 0.75px; }
+#table-grid textarea {
+  display: block;
+  width: 100%;
+  min-width: 60px;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 4px 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: inherit;
+  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  resize: none;
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  outline: none;
+}
+#table-grid textarea:focus { border-color: var(--info); }
+#table-grid td.num textarea { text-align: right; }
+#table-grid td.changed { box-shadow: inset 0 0 0 2px var(--info); }
+#table-grid td .was { padding: 0 6px 3px; font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); text-decoration: line-through; }
+#table-grid td.num .was { text-align: right; }
+#table-grid tr.new td { outline: 1px dashed var(--ok); outline-offset: -2px; }
+#table-grid tr.new textarea { color: var(--ok); }
+#table-grid tr.deleted textarea { color: var(--err); text-decoration: line-through; }
+#table-grid td.locked textarea { color: var(--muted); font-style: italic; }
+#table-panel .tb-foot .tb-keys { font-size: 11px; }
+#table-panel .tb-foot button.primary { background: var(--info); color: #fff; border-color: var(--info); }
+
 /* ---------- pdf.js text layer (subset of pdf_viewer.css) ---------- */
 
 .textLayer {

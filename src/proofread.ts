@@ -84,6 +84,8 @@ export interface Hunk {
    * `raw`: `new` goes in untracked, the scaffolding of a list or footnote around tracked text (marks.ts trackedPieces).
    */
   markup?: "highlight" | "comment" | "raw";
+  /** The tracked mark goes in a `{…}` group: a siunitx `S` cell reads anything else as a number (table.ts). */
+  braced?: boolean;
 }
 
 export interface Target {
@@ -307,7 +309,7 @@ export function applyHunks(text: string, hunks: Hunk[], direct: boolean, author:
             : h.new
               ? `\\added[${opts}]{${h.new}}`
               : `\\deleted[${opts}]{${boxRefs(h.old)}}`;
-    return { start: h.start, end: h.end, order, markup };
+    return { start: h.start, end: h.end, order, markup: h.braced && !direct ? `{${markup}}` : markup };
   });
   let out = text;
   // From the end, so earlier offsets stay valid; notes moved to one spot keep their order.

@@ -126,6 +126,7 @@
         <button id="sel-source" type="button" title="Show the source of this passage in the editor (⌘-click does this for any spot)">Source</button>
         <button id="sel-proofread" type="button" title="Fix typos, grammar and punctuation in the source of this passage; suggestions land in ✎ Review">Proofread</button>
         <button id="sel-rewrite" type="button" hidden title="Alternative wordings for this passage; pick one to replace it in the source (key R)">Rewrite…</button>
+        <button id="sel-table" type="button" hidden title="Edit this table: its cells, rows and columns (key T)">Table…</button>
         <button id="sel-ask" type="button" title="Tell omp what to do with this passage (type an instruction, Enter sends)">Ask omp…</button>
         <button id="sel-dictate" type="button" hidden title="Speak text to go after this passage; it lands as a suggestion in ✎ Review (key D)">🎙 Dictate</button>
         <span id="sel-review" role="group" aria-label="Review marks" hidden>
@@ -177,6 +178,38 @@
     <div class="empty-inner">
       <div id="empty-title"><span class="spinner" aria-hidden="true"></span> Waiting for the first build…</div>
       <ul id="empty-list" class="diag-list"></ul>
+    </div>
+  </div>
+
+  <div id="table-panel" hidden role="dialog" aria-label="Edit table">
+    <div class="tb-head">
+      <span class="tb-title">Edit table</span>
+      <span id="table-where" class="muted"></span>
+      <span class="spacer"></span>
+      <label class="tb-track" title="On: your edits go in as tracked changes (✎ Review). Off: plain edits, checkpointed (± Changes); needed to add or remove columns">
+        <input id="table-track" type="checkbox" checked> Track changes</label>
+      <button id="table-close" type="button" title="Close (Esc)" aria-label="Close">×</button>
+    </div>
+    <div id="table-tools" role="toolbar" aria-label="Table">
+      <button type="button" data-tb="bold" title="Bold: \textbf{…}"><b>B</b></button>
+      <button type="button" data-tb="emph" title="Emphasis: \emph{…}"><i>I</i></button>
+      <button type="button" data-tb="math" title="Inline math: $…$"><i>x</i>²</button>
+      <span class="fmt-sep" aria-hidden="true"></span>
+      <button type="button" data-tb="row-above" title="New row above the cell">＋ Row above</button>
+      <button type="button" data-tb="row-below" title="New row below the cell">＋ Row below</button>
+      <button type="button" data-tb="row-delete" title="Remove the cell's row (again: keep it)">− Row</button>
+      <span class="fmt-sep" aria-hidden="true"></span>
+      <button type="button" data-tb="col-left" title="New column left of the cell (Track changes off)">＋ Col left</button>
+      <button type="button" data-tb="col-right" title="New column right of the cell (Track changes off)">＋ Col right</button>
+      <button type="button" data-tb="col-delete" title="Remove the cell's column (Track changes off)">− Col</button>
+    </div>
+    <div id="table-grid-wrap"><table id="table-grid"></table></div>
+    <div class="tb-foot">
+      <span id="table-summary" class="muted"></span>
+      <span class="spacer"></span>
+      <span class="muted tb-keys">Tab next cell · Enter cell below · paste a spreadsheet range · Esc close</span>
+      <button id="table-cancel" type="button">Cancel</button>
+      <button id="table-save" type="button" class="primary">Mark</button>
     </div>
   </div>
 

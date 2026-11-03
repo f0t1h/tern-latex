@@ -9,6 +9,7 @@ import { type DocConfig, docPaths, paths, posix, type ReviewAuthor } from "./con
 import { type Diagnostic, formatDiagnostic } from "./diagnostics.ts";
 import { SearchIndex } from "./search.ts";
 import { SyncTex } from "./synctex.ts";
+import { fileVersion, type Table, type TableEdit, tableAt, tableHunks } from "./table.ts";
 import { lineEndOffset, type LocatedRange, locateRange, locateSelection, type SelectionContext } from "./locate.ts";
 import { isMarkKind, markHunks, replaceableSource } from "./marks.ts";
 import { changesLoaded, type Hunk, writeSuggestions } from "./proofread.ts";
@@ -205,6 +206,29 @@ export async function startServer(o: ServerOptions): Promise<DevServer> {
   const selectionRange = async (doc: DocConfig, page: number, start: { x: number; y: number }, text: string, context?: SelectionContext): Promise<LocatedRange | null> => {
     const a = (await loadSynctex(doc))?.reverse(page, start.x, start.y) ?? null;
     return locateRange(cfg, doc, text, a ? { file: sourceRel(a.file), line: a.line } : undefined, context);
+  };
+  /** The table at BODY's source line (`file`, `line`) or PDF point (`page`, `x`, `y`), or why there is none. */
+  const tableFor = async (doc: DocConfig, body: Record<string, unknown>): Promise<{ table: Table } | string> => {
+    let file: string;
+    let line: number;
+    if (typeof body.file === "string" && typeof body.line === "number") {
+      const abs = inProject(body.file);
+      if (!abs || !existsSync(abs)) return "file outside project";
+      file = posix(relative(cfg.dir, abs));
+      line = body.line;
+    } else if (typeof body.page === "number" && typeof body.x === "number" && typeof body.y === "number") {
+      const a = (await loadSynctex(doc))?.reverse(body.page, body.x, body.y);
+      if (!a) return "no source at that point";
+      file = sourceRel(a.file);
+      line = a.line;
+    } else return "file and line, or page, x and y required";
+    const abs = join(cfg.dir, file);
+    if (!existsSync(abs)) return `${file} is not in the project`;
+    const src = readFileSync(abs, "utf8");
+    // The line's end: a `\begin{tabular}` anywhere on it counts.
+    const at = src.split("\n").slice(0, Math.max(1, line)).join("\n").length;
+    const table = tableAt(file, src, at);
+    return table ? { table } : `no table (tabular, tabularx, longtable) at ${file}:${line}`;
   };
   /** Status of omp's speech model: checked at start in the background, again on a request while not ready (`omp setup speech` needs no restart). */
   let speech = o.dictation?.status();
@@ -450,6 +474,44 @@ export async function startServer(o: ServerOptions): Promise<DevServer> {
         if (typeof r === "string") return send(res, 422, { error: r });
         return send(res, 200, { file: loc.file, line: src.slice(0, r.start).split("\n").length, latex: r.latex });
       }
+      // The table editor: the table at a PDF point or a source line, as rows of LaTeX cells; edits back as marks.
+      if (route === "POST /table/probe" || route === "POST /table/source" || route === "POST /table/open") {
+        const found = await tableFor(doc, body);
+        if (typeof found === "string") return send(res, route === "POST /table/probe" ? 200 : 404, route === "POST /table/probe" ? { table: false } : { error: found });
+        const { table } = found;
+        if (route === "POST /table/probe") return send(res, 200, { table: true, file: table.file, line: table.line });
+        if (route === "POST /table/open") {
+          // From the editor (`ternlatex table`): show the table, and have the viewers open it.
+          for (const d of cfg.docs) {
+            const box = (await loadSynctex(d))?.forward(join(cfg.dir, table.file), table.line);
+            if (!box) continue;
+            sse("reveal", { doc: d.name, ...box });
+            break;
+          }
+          sse("table", { file: table.file, line: table.line });
+          return send(res, 200, { file: table.file, line: table.line, viewers: clients.size });
+        }
+        return send(res, 200, tableView(table));
+      }
+      if (route === "POST /table/apply") {
+        if (!o.review) return send(res, 404, { error: "review unavailable" });
+        const abs = inProject(body.file);
+        if (!abs || !existsSync(abs) || typeof body.begin !== "number" || typeof body.version !== "string") return send(res, 400, { error: "file, begin and version required" });
+        const edit = tableEdit(body);
+        if (!edit) return send(res, 400, { error: "rows [{from, cells, deleted}], columns [{from}] and track required" });
+        const file = posix(relative(cfg.dir, abs));
+        const src = readFileSync(abs, "utf8");
+        const table = tableAt(file, src, body.begin);
+        if (fileVersion(src) !== body.version || !table || table.begin !== body.begin) return send(res, 409, { error: `${file} changed meanwhile; open the table again` });
+        const hunks = tableHunks(src, table, edit);
+        if (typeof hunks === "string") return send(res, 422, { error: hunks });
+        if (!hunks.length) return send(res, 200, { file, line: table.line, changed: 0 });
+        const me = o.review.me;
+        const r = await writeSuggestions(cfg, hunks, new Map([[file, src]]), { author: me.id, direct: !edit.track, build: () => builder.request(), label: `table edit by ${me.id}` });
+        if (r.reverted) return send(res, 409, { error: `not saved: ${r.reverted}` });
+        if (!r.pending && r.hunks.length < hunks.length) return send(res, 409, { error: `${file} changed meanwhile; open the table again` });
+        return send(res, 200, { file, line: table.line, changed: hunks.filter((h) => h.markup !== "raw").length || hunks.length, author: me.id, tracked: edit.track, pending: r.pending === true });
+      }
       if (route === "POST /open") {
         const abs = inProject(body.file);
         if (!abs) return send(res, 400, { error: "file outside project" });
@@ -605,6 +667,38 @@ async function sendAsset(res: ServerResponse, rel: string): Promise<void> {
 
 function isPoint(v: unknown): v is { x: number; y: number } {
   return Boolean(v && typeof v === "object" && "x" in v && "y" in v && typeof v.x === "number" && typeof v.y === "number");
+}
+
+/** What the viewer's table editor gets: cells' LaTeX without offsets, rules as lines. */
+function tableView(t: Table) {
+  return {
+    file: t.file,
+    line: t.line,
+    env: t.env,
+    spec: t.spec.text,
+    begin: t.begin,
+    version: t.version,
+    columns: t.columns.map((c) => ({ spec: c.spec, numeric: c.numeric, align: c.align })),
+    lines: t.lines.map((l) => (l.kind === "rule" ? { kind: "rule", text: l.text } : { kind: "row", cells: l.cells.map((c) => ({ text: c.text, span: c.span, ...(c.locked ? { locked: c.locked } : {}) })) })),
+  };
+}
+
+/** A table edit from a request body, or null when it isn't one. */
+function tableEdit(body: Record<string, unknown>): TableEdit | null {
+  const { rows, columns, track } = body;
+  if (!Array.isArray(rows) || !Array.isArray(columns) || typeof track !== "boolean") return null;
+  const out: TableEdit = { rows: [], columns: [], track };
+  for (const r of rows) {
+    if (!r || typeof r !== "object" || !("from" in r) || !("cells" in r) || !Array.isArray(r.cells)) return null;
+    const from = r.from === null ? null : typeof r.from === "number" ? r.from : undefined;
+    if (from === undefined || !r.cells.every((c: unknown) => typeof c === "string")) return null;
+    out.rows.push({ from, cells: r.cells, ...("deleted" in r && r.deleted === true ? { deleted: true } : {}) });
+  }
+  for (const c of columns) {
+    if (!c || typeof c !== "object" || !("from" in c) || (c.from !== null && typeof c.from !== "number")) return null;
+    out.columns.push({ from: c.from });
+  }
+  return out;
 }
 
 /** The text around a selection that the viewer sends with it (`before`, `after`), when it does. */

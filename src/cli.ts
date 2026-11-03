@@ -24,6 +24,7 @@ import { lint } from "./commands/lint.ts";
 import { review } from "./commands/review.ts";
 import { setupTern, ternConfig } from "./commands/setup-tern.ts";
 import { show } from "./commands/show.ts";
+import { table } from "./commands/table.ts";
 import { searchCommand } from "./commands/search.ts";
 import { snapshot } from "./commands/snapshot.ts";
 import { tool } from "./commands/tool.ts";
@@ -76,6 +77,7 @@ writing
                           render one PDF page to PNG and print its path
   show FILE:LINE [--doc NAME]
                           scroll the live viewer to the PDF spot of a source line and highlight it
+  table FILE:LINE         open the viewer's table editor on the table (tabular, tabularx, longtable) at a line
   outline [--doc NAME] [--json]
                           sections, figures, tables and labelled equations in reading order, numbered from
                           the last build, then problems: undefined refs, unused/duplicate labels, missing citations
@@ -197,6 +199,10 @@ async function main(argv: string[]): Promise<number> {
       const { values, positionals } = parseArgs({ args: rest, allowPositionals: true, options: { doc: { type: "string" } } });
       if (!positionals[0]) throw new UsageError("show needs FILE:LINE");
       return show(positionals[0], values.doc);
+    }
+    case "table": {
+      if (!rest[0]) throw new UsageError("table needs FILE:LINE");
+      return table(rest[0]);
     }
     case "outline":
       return outlineCommand(rest);

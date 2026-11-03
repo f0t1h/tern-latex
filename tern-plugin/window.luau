@@ -1244,6 +1244,50 @@ tern.command(keyed({
 	run = show_in_pdf,
 }))
 
+-- The viewer's table editor on the table at the caret: saves the file (the
+-- server reads it from disk), asks `ternlatex table`, then focuses the viewer
+-- to type in.
+tern.command(keyed({
+	id = "table",
+	icon = "list",
+	available = function(cx: WindowCx): boolean
+		local pane = focused_pane(cx)
+		return pane ~= nil and pane.kind == "file" and pane.path ~= nil and ends(pane.path :: string, ".tex")
+	end,
+	run = function(cx: WindowCx)
+		local pane = focused_pane(cx)
+		local path = if pane and pane.kind == "file" then pane.path else nil
+		if pane == nil or path == nil then
+			not_tex(cx, "Edit table")
+			return
+		end
+		local file = path :: string
+		local line = caret(cx, pane.pane).line
+		local _, rec = focused_project(cx)
+		local viewer = if rec then rec.viewer else nil
+		cx.docs:save(file):next(function(_saved, save_err, c0)
+			local cx1 = c0 :: WindowCx
+			if save_err then
+				cx1:toast("error", "Edit table", "could not save " .. file .. ": " .. tostring(save_err))
+				return
+			end
+			local err = run_cli(cx1, { "table", file .. ":" .. line }, common.parent(file) or file, function(result, c)
+				if result.status ~= 0 then
+					c:toast("error", "Edit table", common.outcome(result))
+					return
+				end
+				local v = live(c, viewer, "browser")
+				if v then
+					c.layout:focus(v.pane)
+				end
+			end)
+			if err then
+				cx1:toast("error", "Edit table", err)
+			end
+		end)
+	end,
+}))
+
 -- `available` runs under a 4 ms budget whenever Tern builds the palette or checks a key, so it only looks at the
 -- focused block (no ternlatex.toml walk, which can be slow on network or synced folders); `run` checks the
 -- project and says so when there is none.

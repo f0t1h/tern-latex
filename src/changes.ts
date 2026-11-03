@@ -445,9 +445,18 @@ export function rewrite(text: string, targets: Span[], decision: "accept" | "rej
     let pos = from;
     for (const t of sorted) {
       if (t.start < pos || t.end > to) continue; // nested in a target already handled, or outside
-      out += text.slice(pos, t.start);
       const keep = KEEP[t.kind][decision];
-      out += keep === null ? GONE : unboxRefs(render(t.args[keep].start, t.args[keep].end));
+      const kept = keep === null ? GONE : unboxRefs(render(t.args[keep].start, t.args[keep].end));
+      // A table cell's mark is braced for siunitx (table.ts); resolved to plain text, the braces go too, so a number
+      // is a number again. Only a bare group: after `&`, `\\` or at a line's start, not a command's argument.
+      const before = text.slice(Math.max(0, t.start - 41), t.start - 1);
+      const braced = text[t.start - 1] === "{" && text[t.end] === "}" && t.start - 1 >= pos && (/(?:[&\n]|\\\\)[ \t]*$/.test(before) || /^[ \t]*$/.test(text.slice(0, t.start - 1)));
+      if (braced && (kept === GONE || !kept.includes("\\"))) {
+        out += text.slice(pos, t.start - 1) + kept;
+        pos = t.end + 1;
+        continue;
+      }
+      out += text.slice(pos, t.start) + kept;
       pos = t.end;
     }
     return out + text.slice(pos, to);
@@ -475,6 +484,8 @@ function tidy(input: string): string {
       out.push(l);
       continue;
     }
+    // A table row whose every cell was removed (a tracked row added then rejected, or deleted then accepted).
+    if (/^[ \t]*[\u0000& \t]*\\\\(?:\[[^\]]*\])?[ \t]*$/.test(l)) continue;
     if (l.replaceAll(GONE, "").trim() === "") {
       // The line held only removed markup: drop it, and one of two blank lines it separated.
       const prevBlank = out.length === 0 || out[out.length - 1].trim() === "";

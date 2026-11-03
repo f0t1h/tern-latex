@@ -226,6 +226,7 @@ Editor keys work in a `.tex` file block of a ternlatex project:
 | ⌘⌥B | Ctrl+Alt+B | Insert citation | searches the `.bib` and Zotero, inserts at the caret |
 | ⌘⌥R | Ctrl+Alt+R | Rewrite sentence | offers alternatives for the sentence at the caret |
 | ⌘⌥V | Ctrl+Alt+V | Toggle PDF peek | shows the PDF around the caret |
+| ⌘⌥T | Ctrl+Alt+T | Edit table | opens the table at the caret in the viewer's table editor |
 
 `ternlatex dev` prints these keys at start, and the viewer's **?** lists them. If another Tern action
 already holds a key, a toast names it; bind the ternlatex command to another key in Settings ›
@@ -376,6 +377,22 @@ failed to build before.
 highlights) into `\comment`s on the matching source lines. `/skill:review` has omp work through the
 comments. `ternlatex changes`, `accept` and `reject` do the same on the command line.
 
+#### Tables
+
+Select text in a table (`tabular`, `tabularx`, `tabular*`, `longtable`) and click **Table…** (or press T),
+or press ⌘⌥T in the editor with the caret in one: a grid opens over the PDF with each cell's LaTeX. Tab and
+Shift+Tab move between cells, Enter goes down; B, I and x² (⌘B, ⌘I, ⌘⇧M) format the cell's selection.
+Pasting a range copied from a spreadsheet fills the cells from the one you paste into, adding rows as
+needed (plain text is escaped: `R&D` becomes `R\&D`). Changed cells show the old value under them.
+
+With **Track changes** on (the default) **Mark** writes your edits as review marks: one per changed
+cell, and one per cell of a row you add or remove. A cell in a siunitx `S` column is marked inside braces
+(`{\replaced[id=AK]{0.39}{0.41}}`), as `S` reads anything else as a number; accepting or rejecting the mark
+takes the braces out again, and a row left empty by it goes too, so rejecting everything restores the
+table. Columns can't be tracked: turn Track changes off to add or remove them; **Save** then edits the
+source directly (checkpointed, so ± Changes and `ternlatex restore` reach it). `\multirow` cells and tables
+inside cells are shown but not editable, and a table with `\multicolumn` cells keeps its columns.
+
 ### History
 
 Every save is checkpointed, whether you or omp made the edit. A checkpoint snapshots the working tree to
@@ -475,6 +492,7 @@ Run commands anywhere inside a project (a folder with `ternlatex.toml`), or pass
 | `build [DIR] [--doc NAME] [--all] [--force]` | builds through the running dev server if any; prints `file:line: severity: message`, exits 1 on errors; `--all` adds info messages |
 | `snapshot (--page N \| FILE:LINE) [--doc NAME] [--dpi N] [--out PNG]` | renders one PDF page to PNG (default `build/snapshots/<doc>-page-N.png`) |
 | `show FILE:LINE [--doc NAME]` | scrolls the viewer to a source line and highlights it |
+| `table FILE:LINE` | opens the viewer's table editor on the table at that line |
 | `outline [--doc NAME] [--json]` | document structure and reference problems |
 | `peek FILE:LINE [--doc NAME] [--width PX] [--json]` | renders the PDF around a source line to `build/peek/<doc>.png` |
 | `search QUERY… [--doc NAME] [--json]` | fuzzy search of the PDF text and the LaTeX prose: page, `file:line` and context per place |
