@@ -3238,12 +3238,36 @@ function renderPeople() {
     ...recent.map((p) => {
       const b = el('button', 'person');
       b.type = 'button';
-      b.title = personTitle(p);
+      b.title = `${personTitle(p)}\n${p.edit ? 'Click to go to their last edit' : 'Click for recent edits'}`;
       b.append(avatar(p));
-      b.addEventListener('click', () => (ui.overleafMenu.hidden ? openOverleafMenu() : closeOverleafMenu()));
+      b.addEventListener('click', () => goToPersonEdit(p));
       return b;
     }),
   );
+}
+
+/**
+ * Scrolls to where P last edited and flashes it, in the document on screen or else the first other one whose PDF
+ * has it (switching to it). Without such a place, says why and opens the Overleaf menu with their files.
+ */
+async function goToPersonEdit(p) {
+  const theirs = (e) => (e.email || e.name) === (p.email || p.name);
+  if (p.edit) {
+    const order = [...state.docs].sort((a, b) => Number(b.name === state.docOf) - Number(a.name === state.docOf));
+    for (const d of order) {
+      let edits = d.name === peopleEdits.doc ? peopleEdits.edits : null;
+      if (!edits) {
+        const j = await fetch(`/overleaf/edits?doc=${encodeURIComponent(d.name)}`)
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null);
+        edits = Array.isArray(j?.edits) ? j.edits : [];
+      }
+      const hit = edits.find(theirs);
+      if (hit) return onReveal({ doc: d.name, ...hit.box });
+    }
+  }
+  toast(p.edit ? `${p.name}'s last edit (${p.edit.file}:${p.edit.line}) is in no PDF` : `${p.name}'s last edit changed no .tex file`, 4000);
+  openOverleafMenu();
 }
 
 // ---------------------------------------------------------------- co-authors' latest edits
