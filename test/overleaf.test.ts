@@ -6,7 +6,7 @@ import { pullVerdict } from "../omp/extension.ts";
 import type { Status } from "../src/builder.ts";
 import { withReviewFallback } from "../src/changes.ts";
 import { type Config, docPaths, loadConfig } from "../src/config.ts";
-import { isOverleafUrl, overleafState, pullOverleaf, pushOverleaf } from "../src/overleaf.ts";
+import { diffHunks, editOf, isOverleafUrl, mapLine, overleafState, pullOverleaf, pushOverleaf } from "../src/overleaf.ts";
 import { gitOk } from "../src/vcs.ts";
 
 const root = mkdtempSync(join(tmpdir(), "ternlatex-overleaf-test-"));
@@ -202,6 +202,31 @@ test("co-authors' recent Overleaf edits are counted per person, latest files fir
     { name: "t", commits: 2, files: ["intro.tex", "main.tex"] },
   ]);
   expect(Date.now() - Date.parse(state?.people[0].lastAt ?? "")).toBeLessThan(60_000);
+});
+
+test("a co-author's latest edit is placed on the user's working copy, moved by the lines the user added above it", async () => {
+  const { ours, coauthorEdits } = await setup("last-edit");
+  await gitOk(ours, ["config", "user.email", "me@example.com"]);
+  await coauthorEdits("intro.tex", "one\ntwo\nthree\nfour\nfive\n");
+  await coauthorEdits("intro.tex", "one\ntwo\nthree\nfour, by them\nfive\n");
+  expect((await pullOverleaf(ours)).pulled).toBe(2);
+  writeFileSync(join(ours, "intro.tex"), "new a\nnew b\none\ntwo\nthree\nfour, by them\nfive\n");
+  const [them] = (await overleafState(ours))?.people ?? [];
+  expect(them.edit).toEqual({ file: "intro.tex", line: 6, snippet: "four, by them" });
+});
+
+test("a line keeps its place through a diff: shifted by edits above it, at its hunk when it changed itself", () => {
+  const diff = (body: string) => diffHunks(`diff --git a.tex a.tex\n--- a.tex\n+++ a.tex\n${body}`);
+  // Two lines inserted after line 2, line 6 replaced by three, line 9 deleted.
+  const hunks = diff("@@ -2,0 +3,2 @@\n+x\n+y\n@@ -6 +8,3 @@\n-six\n+6a\n+6b\n+6c\n@@ -9 +12,0 @@\n-nine\n");
+  expect([1, 2, 3, 5, 6, 7, 9, 10].map((l) => mapLine(hunks, l))).toEqual([1, 2, 5, 7, 8, 11, 13, 13]);
+  // A commit's place: its largest .tex hunk, at the first line written, else after what it removed.
+  const show = diffHunks(
+    "diff --git refs.bib refs.bib\n--- refs.bib\n+++ refs.bib\n@@ -1 +1,9 @@\n-a\n+1\n+2\n+3\n+4\n+5\n+6\n+7\n+8\n+9\n" +
+      "diff --git sec.tex sec.tex\n--- sec.tex\n+++ sec.tex\n@@ -3 +3 @@\n-old\n+new  words\n@@ -10,2 +9,0 @@\n-gone one\n-gone two\n",
+  );
+  expect(editOf(show)).toEqual({ file: "sec.tex", line: 10, snippet: "deleted: gone one gone two" });
+  expect(editOf(show.slice(0, 2))).toEqual({ file: "sec.tex", line: 3, snippet: "new words" });
 });
 
 test("the shared review fallback gains the authors with marks it lacks, keeps a co-author's entry, else stays as is", () => {

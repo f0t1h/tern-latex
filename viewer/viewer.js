@@ -900,8 +900,9 @@ function swapIn(pdf, rev, newPages, staging, scale, kind, docName) {
     state.pendingReveal = null;
     applyReveal(r);
   }
-  // New pages: the search's places moved with the text.
+  // New pages: the search's places, and co-authors' latest edits, moved with the text.
   if (searchOpen() && search.query) runSearch({ jump: false });
+  fetchPeopleEdits();
 }
 
 // ---------------------------------------------------------------- reveal (forward search)
@@ -3094,6 +3095,7 @@ function onOverleaf(s) {
     toast(`Pulled ${plural(s.pulled.commits, 'commit')} from Overleaf: ${s.pulled.files.join(', ')}`, 5000);
   }
   renderOverleaf();
+  fetchPeopleEdits();
 }
 
 /**
@@ -3212,13 +3214,18 @@ function freshness(age) {
   return `hsl(${Math.round(hue)} 85% 50%)`;
 }
 
-/** A person's initials in a circle of a colour fixed by their email, with a dot coloured by their last edit's age. */
-function avatar(p) {
+/** A person's colour (a hue), fixed by their email. */
+function personHue(p) {
   let h = 0;
   for (const c of p.email || p.name) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return h % 360;
+}
+
+/** A person's initials in a circle of their colour, with a dot coloured by their last edit's age. */
+function avatar(p) {
   const dot = freshness(Date.now() - Date.parse(p.lastAt));
   const a = el('span', `avatar${dot ? ' recent' : ''}`, initials(p.name));
-  a.style.setProperty('--hue', String(h % 360));
+  a.style.setProperty('--hue', String(personHue(p)));
   if (dot) a.style.setProperty('--fresh', dot);
   return a;
 }
@@ -3238,9 +3245,63 @@ function renderPeople() {
     }),
   );
 }
-// Relative times and "editing now" age without new events.
+
+// ---------------------------------------------------------------- co-authors' latest edits
+
+// Where each Overleaf co-author last edited (their newest commit, moved by the edits since), marked in the margin
+// of the shown document's pages for a day: a bar in their colour beside the lines, their avatar to click. Only
+// the viewer draws them; the PDF and the sources are untouched.
+let peopleEdits = { doc: '', edits: [] };
+let peopleEditsSeq = 0;
+
+async function fetchPeopleEdits() {
+  const seq = ++peopleEditsSeq;
+  const doc = state.docOf;
+  let edits = [];
+  if (state.overleaf?.people.some((p) => p.edit) && doc && state.docKind === 'live') {
+    try {
+      const res = await fetch(`/overleaf/edits?doc=${encodeURIComponent(doc)}`);
+      const j = res.ok ? await res.json() : null;
+      if (Array.isArray(j?.edits)) edits = j.edits;
+    } catch {
+      return; // the server is away; the marks stay until it answers again
+    }
+  }
+  if (seq !== peopleEditsSeq) return;
+  peopleEdits = { doc, edits };
+  drawPeopleEdits();
+}
+
+function drawPeopleEdits() {
+  for (const d of document.querySelectorAll('.person-mark')) d.remove();
+  if (peopleEdits.doc !== state.docOf || state.docKind !== 'live') return;
+  const stacked = new Map(); // people on the same line sit side by side
+  for (const e of peopleEdits.edits) {
+    if (!freshness(Date.now() - Date.parse(e.lastAt))) continue; // older than a day
+    const f = hitFrame({ page: e.box.page }, e.box);
+    if (!f) continue;
+    const at = `${e.box.page}:${Math.round(f.top * 200)}`;
+    const n = stacked.get(at) ?? 0;
+    stacked.set(at, n + 1);
+    const m = el('div', 'person-mark');
+    m.style.left = `${f.left * 100}%`;
+    m.style.top = `${f.top * 100}%`;
+    m.style.height = `${f.height * 100}%`;
+    m.style.setProperty('--hue', String(personHue(e)));
+    m.style.setProperty('--stack', String(n));
+    const a = avatar(e);
+    a.title = `${e.name} edited here ${relTime(e.lastAt)} on Overleaf\n“${e.snippet}”\n${e.file}:${e.line}, click to open`;
+    a.addEventListener('click', () => openFile(e.file, e.line));
+    m.append(a);
+    f.p.div.append(m);
+  }
+}
+
+// Relative times, "editing now" and the marks' colours age without new events.
 setInterval(() => {
-  if (state.overleaf) renderOverleaf();
+  if (!state.overleaf) return;
+  renderOverleaf();
+  drawPeopleEdits();
 }, 30_000);
 
 function closeOverleafMenu() {

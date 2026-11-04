@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { relative } from "node:path";
+import { join, relative } from "node:path";
 import type { Status } from "./builder.ts";
 import { reviewer, scanChanges } from "./changes.ts";
 import { type Config, docPaths, posix } from "./config.ts";
@@ -121,35 +121,151 @@ export interface Collaborator {
   commits: number;
   /** Files their commits changed, the most recent first (up to RECENT_FILES). */
   files: string[];
+  /** Where their latest commit changed a .tex file, if it did and the file is still here. */
+  edit?: LastEdit;
+}
+
+/** A co-author's latest edit: a line of the working copy (their line, moved by the edits made since) and its text. */
+export interface LastEdit {
+  file: string;
+  line: number;
+  /** The text they wrote there, one line, shortened; "deleted: …" when they only removed text. */
+  snippet: string;
 }
 
 const RECENT_DAYS = 7;
 const RECENT_FILES = 6;
 const RECENT_PEOPLE = 8;
+const SNIPPET_CHARS = 100;
 
 /**
  * Co-authors from Overleaf's commits of the last week. Overleaf writes a commit per version of its history, under
- * the account that edited, so its newest commit says when someone last edited there. The user (git's user.email,
- * else user.name) is left out.
+ * the account that edited, so its newest commit says when and where someone last edited there. The user (git's
+ * user.email, else user.name) is left out.
  */
 export async function collaborators(dir: string, rev = "@{u}"): Promise<Collaborator[]> {
-  const log = await git(dir, ["log", rev, `--since=${RECENT_DAYS}.days.ago`, "--format=%x1e%an%x1f%ae%x1f%aI", "--name-only"]);
+  const log = await git(dir, ["log", rev, `--since=${RECENT_DAYS}.days.ago`, "--format=%x1e%H%x1f%an%x1f%ae%x1f%aI", "--name-only"]);
   if (log.code !== 0) return [];
   const myEmail = (await git(dir, ["config", "user.email"])).stdout.trim().toLowerCase();
   const myName = (await git(dir, ["config", "user.name"])).stdout.trim().toLowerCase();
   const people = new Map<string, Collaborator>();
+  const latest = new Map<Collaborator, string>();
   for (const record of log.stdout.split("\x1e").slice(1)) {
     const [head, ...rest] = record.split("\n");
-    const [name = "", email = "", date = ""] = head.split("\x1f");
+    const [sha = "", name = "", email = "", date = ""] = head.split("\x1f");
     if (myEmail ? email.toLowerCase() === myEmail : name.toLowerCase() === myName) continue;
     const key = (email || name).toLowerCase();
     // git log runs newest first: the first record of a person is their latest.
-    const p = people.get(key) ?? { name, email, lastAt: new Date(date).toISOString(), commits: 0, files: [] };
+    let p = people.get(key);
+    if (!p) {
+      p = { name, email, lastAt: new Date(date).toISOString(), commits: 0, files: [] };
+      people.set(key, p);
+      latest.set(p, sha);
+    }
     p.commits++;
     for (const f of rest.map((l) => l.trim()).filter(Boolean)) if (p.files.length < RECENT_FILES && !p.files.includes(f)) p.files.push(f);
-    people.set(key, p);
   }
-  return [...people.values()].slice(0, RECENT_PEOPLE);
+  const recent = [...people.values()].slice(0, RECENT_PEOPLE);
+  for (const p of recent) {
+    const edit = await lastEdit(dir, latest.get(p) ?? "");
+    if (edit) p.edit = edit;
+  }
+  return recent;
+}
+
+/** One hunk of a `git diff -U0 --no-prefix`: OLD lines oldStart… replaced by NEW lines newStart…, 1-based. */
+export interface DiffHunk {
+  file: string;
+  /** The file is gone on the new side. */
+  deleted: boolean;
+  oldStart: number;
+  oldCount: number;
+  newStart: number;
+  newCount: number;
+  added: string[];
+  removed: string[];
+}
+
+/** The hunks of a zero-context diff (`git diff -U0 --no-prefix` or `git show`), in order. */
+export function diffHunks(diff: string): DiffHunk[] {
+  const out: DiffHunk[] = [];
+  let file = "";
+  let deleted = false;
+  let hunk: DiffHunk | null = null;
+  for (const line of diff.split("\n")) {
+    if (line.startsWith("diff --git ")) {
+      hunk = null;
+      file = "";
+      deleted = false;
+    } else if (!hunk && line.startsWith("+++ ")) {
+      deleted = line === "+++ /dev/null";
+      if (!deleted) file = line.slice(4).replace(/\t$/, "");
+    } else if (!hunk && line.startsWith("--- ") && line !== "--- /dev/null") {
+      file ||= line.slice(4).replace(/\t$/, "");
+    } else if (line.startsWith("@@ ")) {
+      const m = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(line);
+      if (!m || !file) continue;
+      hunk = { file, deleted, oldStart: +m[1], oldCount: m[2] === undefined ? 1 : +m[2], newStart: +m[3], newCount: m[4] === undefined ? 1 : +m[4], added: [], removed: [] };
+      out.push(hunk);
+    } else if (hunk && line.startsWith("+")) hunk.added.push(line.slice(1));
+    else if (hunk && line.startsWith("-")) hunk.removed.push(line.slice(1));
+  }
+  return out;
+}
+
+/**
+ * The place a commit's diff points at: its largest hunk in a .tex file (the last of equals), at the first line it
+ * wrote, or the line after text it only removed.
+ */
+export function editOf(hunks: DiffHunk[]): LastEdit | null {
+  let best: DiffHunk | null = null;
+  for (const h of hunks) {
+    if (h.deleted || !h.file.endsWith(".tex")) continue;
+    if (!best || h.added.length + h.removed.length >= best.added.length + best.removed.length) best = h;
+  }
+  if (!best) return null;
+  const text = (lines: string[]) => lines.join(" ").replace(/\s+/g, " ").trim();
+  const wrote = text(best.added);
+  const snippet = wrote || `deleted: ${text(best.removed)}`;
+  return {
+    file: best.file,
+    line: Math.max(1, best.newCount ? best.newStart : best.newStart + 1),
+    snippet: snippet.length > SNIPPET_CHARS ? `${snippet.slice(0, SNIPPET_CHARS - 1)}…` : snippet,
+  };
+}
+
+/**
+ * Where LINE of a file's old side is on its new side, through one file's hunks of a zero-context diff: moved by
+ * the lines added and removed above it; a line that changed itself goes to where its hunk now starts.
+ */
+export function mapLine(hunks: DiffHunk[], line: number): number {
+  let delta = 0;
+  for (const h of hunks) {
+    if (h.oldCount === 0) {
+      // Lines inserted after old line oldStart.
+      if (line <= h.oldStart) break;
+      delta += h.newCount;
+      continue;
+    }
+    if (line < h.oldStart) break;
+    if (line < h.oldStart + h.oldCount) return Math.max(1, h.newCount ? h.newStart : h.newStart + 1);
+    delta += h.newCount - h.oldCount;
+  }
+  return line + delta;
+}
+
+const DIFF = ["-c", "core.quotePath=false", "diff", "-U0", "--no-prefix", "--no-color", "--no-ext-diff"];
+
+/** Where commit SHA last edited a .tex file, as a line of the working copy now; null when there is no such place. */
+async function lastEdit(dir: string, sha: string): Promise<LastEdit | null> {
+  if (!sha) return null;
+  const show = await git(dir, ["-c", "core.quotePath=false", "show", "-U0", "--no-prefix", "--no-color", "--no-ext-diff", "--format=", sha, "--", "*.tex"]);
+  const edit = show.code === 0 ? editOf(diffHunks(show.stdout)) : null;
+  if (!edit || !existsSync(join(dir, edit.file))) return null;
+  // From their commit to the working copy: the edits since (theirs, others', the user's unsaved-to-git ones).
+  const since = await git(dir, [...DIFF, sha, "--", edit.file]);
+  if (since.code !== 0) return null;
+  return { ...edit, line: mapLine(diffHunks(since.stdout), edit.line) };
 }
 
 /** DIR's position against Overleaf, after fetching it; null when DIR is no Overleaf clone. */

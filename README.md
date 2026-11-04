@@ -151,6 +151,14 @@ marks in the sources: accept or reject them in ✎ Review first, so co-authors o
 accepted (in an Overleaf clone omp always marks its prose edits for this). It also refuses while a
 document fails to build, or builds only partially.
 
+The toolbar shows the co-authors who edited on Overleaf in the last day, with a dot that goes from green
+(just now) through yellow (6 hours) to red (a day); the menu lists the files each changed this week. The
+PDF marks where each last edited: a bar in their colour beside the lines their newest Overleaf version
+changed, moved by the edits you made since, and their avatar in the margin. Hover it for what they wrote;
+click it to open that line. The marks are drawn by the viewer only and fade out after a day. They follow
+Overleaf's history versions, so they lag a co-author's typing by a minute or more; they are not live
+cursors.
+
 Overleaf has no `style/ternlatex-review.tex`, so a document that loads it with a fallback,
 `\InputIfFileExists{style/ternlatex-review.tex}{}{…}`, defines its review authors there for Overleaf.
 A mark by an author the fallback lacks would stop Overleaf's build with "Undefined changes author", so when

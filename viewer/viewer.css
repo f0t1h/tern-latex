@@ -196,6 +196,29 @@ button:disabled { opacity: 0.45; cursor: default; background: none; }
 .search-hit.approx { background: rgba(255, 214, 0, 0.14); outline: 1px dashed rgba(200, 140, 0, 0.8); }
 .search-hit.approx.current { background: rgba(255, 140, 0, 0.22); outline: 2px dashed rgba(230, 110, 0, 0.9); }
 
+/* A co-author's latest edit: a bar in their colour left of the lines, their avatar (clickable) beside it. */
+.person-mark {
+  position: absolute;
+  width: 0;
+  margin-left: -5px;
+  border-left: 2.5px solid hsl(var(--hue, 210) 60% 50%);
+  border-radius: 1px;
+  pointer-events: none;
+  z-index: 4;
+}
+.person-mark .avatar {
+  position: absolute;
+  top: -1px;
+  right: calc(4px + var(--stack, 0) * 22px);
+  width: 18px;
+  height: 18px;
+  font-size: 8.5px;
+  pointer-events: auto;
+  cursor: pointer;
+  box-shadow: 0 0 0 1.5px #fff, 0 1px 3px rgba(0, 0, 0, 0.3);
+  --bar-bg: #fff;
+}
+
 /* ---------- help popover & first-run tip ---------- */
 
 #help {

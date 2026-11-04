@@ -295,6 +295,17 @@ export async function startServer(o: ServerOptions): Promise<DevServer> {
         if (!o.overleaf) return send(res, 404, { error: "this project is no Overleaf clone" });
         return send(res, 200, await o.overleaf.check());
       }
+      // Co-authors' latest edits on this document's pages (the viewer marks them; nothing is written).
+      if (route === "GET /overleaf/edits") {
+        const people = (o.overleaf?.state?.people ?? []).filter((p) => p.edit);
+        const st = people.length ? await (loadSynctex(doc)?.catch(() => null) ?? null) : null;
+        const edits = people.flatMap((p) => {
+          const e = p.edit;
+          const box = e && st?.forwardLines(join(cfg.dir, e.file), e.line);
+          return e && box ? [{ name: p.name, email: p.email, lastAt: p.lastAt, ...e, box }] : [];
+        });
+        return send(res, 200, { doc: doc.name, rev: builder.status(doc.name).rev, edits });
+      }
       if (route === "POST /overleaf/push") {
         if (!o.overleaf) return send(res, 404, { error: "this project is no Overleaf clone" });
         const message = typeof body.message === "string" ? body.message : undefined;
