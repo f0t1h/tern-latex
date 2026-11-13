@@ -1,6 +1,6 @@
 {
   "name": "ternlatex",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Live LaTeX → PDF editing inside Tern, with omp as the writing assistant",
   "private": true,
   "type": "module",

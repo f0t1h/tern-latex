@@ -1,7 +1,7 @@
 schema = 1
 id = "ternlatex"
 name = "ternlatex"
-version = "0.1.0"
+version = "0.2.0"
 description = "Live LaTeX → PDF with omp: project layout, build status, errors, forward search, review."
 host = "tern-plugin/host.luau"
 window = "tern-plugin/window.luau"
